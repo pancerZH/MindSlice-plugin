@@ -6,7 +6,7 @@
   "page_limit": 9500,
   "hook_slots": 4,
   "hook_event": "SessionStart",
-  "hook_command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/mindslice\" hook {slot}",
+  "hook_command": "sh \"${CLAUDE_PLUGIN_ROOT}/adapter/mindslice\" hook {slot}",
   "hook_timeout": 30,
   "skills": {
     "setup": true,

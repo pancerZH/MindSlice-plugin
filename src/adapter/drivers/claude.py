@@ -1,11 +1,17 @@
 """Claude Code driver: where Claude puts plugin data and options, and how its SessionStart hooks deliver pages.
 
-Hooks: ``hooks/hooks.json`` runs ``sh bin/mindslice hook <slot>`` for slots 1..K in one matcher-less
+Hooks: ``hooks/hooks.json`` runs ``sh adapter/mindslice hook <slot>`` for slots 1..K in one matcher-less
 ``SessionStart`` group (startup, resume, clear, compact); the shim picks a Python (``py`` first on Windows), so
 hooks need no configuration. Claude runs them in parallel (``sh -c`` on macOS/Linux, Git Bash on Windows) and
 adds each one's plain-text stdout to the context (up to 10,000 characters each), so slot ``i`` prints page ``i``
-of one shared snapshot. Slot 1 also exports ``MINDSLICE_PLUGIN_WORKSPACE`` and ``MINDSLICE_PLUGIN_PYTHON`` (the
-verified interpreter) and ``MINDSLICE_PLUGIN_DATA`` through ``$CLAUDE_ENV_FILE`` for the Bash tool.
+of one shared snapshot.
+
+The plugin has no top-level ``bin/`` (Claude puts it on the Bash tool's PATH, but Chat and Cowork refuse to
+install a plugin that has one). Slot 1 provides the ``mindslice`` command instead: it writes a small launcher to
+``<plugin data>/bin/`` that runs this plugin version's ``adapter/mindslice`` and, through ``$CLAUDE_ENV_FILE``,
+puts that directory first on the Bash tool's PATH, next to ``MINDSLICE_PLUGIN_PYTHON`` (the verified interpreter),
+``MINDSLICE_PLUGIN_DATA`` and, once resolved, ``MINDSLICE_PLUGIN_WORKSPACE``. It does so in every state
+(unconfigured, isolated), since ``mindslice plugin-status`` is how setup diagnoses those states.
 
 The MCP server is started directly by Claude with the ``python`` plugin option (default ``python3``): on Windows,
 where ``python3`` is usually missing or the Microsoft Store placeholder, the user sets it to ``py``.
@@ -63,23 +69,85 @@ def _hook_input() -> dict:
     return value if isinstance(value, dict) else {}
 
 
-def env_lines(workspace: Path) -> str:
-    """What slot 1 adds to ``$CLAUDE_ENV_FILE``: plain ``export NAME='value'`` lines (forward slashes, so Git Bash
-    on Windows can run the interpreter path as is)."""
+def launcher_dir() -> Path:
+    import core
+
+    return core.plugin_data_dir() / "bin"
+
+
+def _write_if_changed(path: Path, text: str, newline: str = "\n") -> None:
+    import core
+
+    data = text.replace("\n", newline)
+    try:
+        if path.read_text(encoding="utf-8") == data:
+            return
+    except OSError:
+        pass
+    core.atomic_write(path, data)
+
+
+def write_launchers() -> Path:
+    """``<plugin data>/bin/mindslice`` (and ``mindslice.cmd`` on Windows): stable paths that run the plugin
+    version installed now, refreshed at every session start, so links to them survive plugin updates."""
+    import core
+
+    d = launcher_dir()
+    adapter = core.PLUGIN_ROOT / "adapter"
+    sh = d / "mindslice"
+    _write_if_changed(sh, "#!/bin/sh\n# Written by the MindSlice plugin at session start: runs the installed plugin's CLI.\n"
+                          f"exec sh {shlex.quote((adapter / 'mindslice').as_posix())} \"$@\"\n")
+    sh.chmod(0o755)
+    if os.name == "nt":
+        _write_if_changed(d / "mindslice.cmd", "@echo off\nrem Written by the MindSlice plugin at session start.\n"
+                                               f"call \"{adapter / 'mindslice.cmd'}\" %*\nexit /b %ERRORLEVEL%\n",
+                          newline="\r\n")
+    return d
+
+
+def path_entry(directory: Path) -> str:
+    """``directory`` as an entry of the Bash tool's PATH: Git Bash on Windows needs /c/... (C:/... has a colon)."""
+    if os.name != "nt":
+        return str(directory)
+    posix = directory.as_posix()
+    cygpath = shutil.which("cygpath")
+    if cygpath:
+        try:
+            out = subprocess.run([cygpath, "-u", posix], capture_output=True, text=True, timeout=10).stdout.strip()
+            if out:
+                return out
+        except (OSError, subprocess.SubprocessError):
+            pass
+    if len(posix) > 1 and posix[1] == ":":  # Git for Windows mounts drive C: at /c
+        return "/" + posix[0].lower() + posix[2:]
+    return posix
+
+
+def env_lines(workspace: Path | None, launchers: Path | None = None) -> str:
+    """What slot 1 adds to ``$CLAUDE_ENV_FILE``: ``export NAME='value'`` lines (forward slashes, so Git Bash on
+    Windows can run the interpreter path as is) and the PATH entry for the launcher, added once."""
     python = Path(sys.executable).as_posix()
-    lines = (f"export MINDSLICE_PLUGIN_WORKSPACE={shlex.quote(str(workspace))}\n"
-             f"export MINDSLICE_PLUGIN_PYTHON={shlex.quote(python)}\n")
+    lines = f"export MINDSLICE_PLUGIN_PYTHON={shlex.quote(python)}\n"
     data = _env("CLAUDE_PLUGIN_DATA")
     if data:  # namespaced: the Bash tool's environment is shared by every plugin
         lines += f"export MINDSLICE_PLUGIN_DATA={shlex.quote(Path(data).as_posix())}\n"
+    if launchers is not None:
+        entry = shlex.quote(path_entry(launchers))
+        lines += f'case ":$PATH:" in *:{entry}:*) ;; *) export PATH={entry}:"$PATH" ;; esac\n'
+    if workspace is not None:
+        lines += f"export MINDSLICE_PLUGIN_WORKSPACE={shlex.quote(str(workspace))}\n"
     return lines
 
 
-def _export_env(workspace: Path) -> None:
+def _export_env(workspace: Path | None) -> None:
+    try:
+        launchers: Path | None = write_launchers()
+    except OSError:
+        launchers = None
     env_file = _env("CLAUDE_ENV_FILE")
     if not env_file:
         return
-    block = env_lines(workspace)
+    block = env_lines(workspace, launchers)
     try:
         target = Path(env_file)
         if target.is_file() and target.read_text(encoding="utf-8").endswith(block):
@@ -116,7 +184,9 @@ def startup_notes() -> list[str]:
 def run_hook(args: list[str]) -> int:
     import core
 
-    if core.isolated():
+    if core.isolated():  # no memory, no output; the command stays available (Forge calls it with -w)
+        if args[:1] == ["1"]:
+            _export_env(None)
         return 0
     cfg = core.target_config()
     slots = int(cfg["hook_slots"])
@@ -130,7 +200,7 @@ def run_hook(args: list[str]) -> int:
     info = _hook_input()
     session = str(info.get("session_id") or f"ppid-{os.getppid()}")
     result = core.hook_pages(session, int(cfg["page_limit"]), slots)
-    if slot == 1 and result.workspace is not None:
+    if slot == 1:
         _export_env(result.workspace)
     if slot <= len(result.pages):
         out = result.pages[slot - 1]

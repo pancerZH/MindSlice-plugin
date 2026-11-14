@@ -17,16 +17,19 @@ long session, then ask for the phrase again).
 
 ### Optional: `mindslice` in the user's own terminal
 
-The plugin's command is only on the Bash tool's `PATH`. If the user wants it in their own terminal (for
-example to run `mindslice review` themselves), offer to link it, after showing them the command:
+The plugin's command is only on the Bash tool's `PATH`: at session start the plugin writes a small launcher
+to its data directory and puts that directory on the Bash tool's `PATH`. If the user wants the command in
+their own terminal (for example to run `mindslice review` themselves), offer to link that launcher, after
+showing them the command:
 
 ```bash
 mkdir -p ~/.local/bin && ln -sf "$(command -v mindslice)" ~/.local/bin/mindslice
 ```
 
-The link points into the plugin's versioned cache directory, so it must be recreated after a plugin update.
-Skip it when the user already has a `mindslice` installed from PyPI or a checkout.
+The launcher's path does not change between plugin versions (the plugin refreshes it at every session start),
+so the link keeps working after updates; uninstalling the plugin removes the launcher and leaves the link
+dangling. Skip it when the user already has a `mindslice` installed from PyPI or a checkout.
 
 On Windows, Git Bash can use the same link. For cmd and PowerShell, give the user the full path of the
-plugin's `mindslice.cmd` instead (`cygpath -w "$(command -v mindslice).cmd"` in the Bash tool prints it); it
-also moves with each plugin update.
+launcher's `mindslice.cmd`, next to it in the same directory (`cygpath -w "$(command -v mindslice).cmd"` in the
+Bash tool prints it); it also stays the same across plugin updates.

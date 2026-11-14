@@ -15,10 +15,10 @@ REPO = Path(__file__).resolve().parent.parent
 TARGET = os.environ.get("MINDSLICE_PLUGIN_TARGET", "claude")
 PLUGIN = REPO / "plugins" / TARGET
 ENTRY = PLUGIN / "adapter" / "entry.py"
-BIN = PLUGIN / "bin" / "mindslice"
+BIN = PLUGIN / "adapter" / "mindslice"  # the sh launcher (hooks.json runs it; the Bash tool reaches it via PATH)
 WINDOWS = os.name == "nt"
 # How a user's terminal runs the plugin CLI: the sh shim, or mindslice.cmd from cmd/PowerShell on Windows.
-SHIM = [str(PLUGIN / "bin" / "mindslice.cmd")] if WINDOWS else [str(BIN)]
+SHIM = [str(PLUGIN / "adapter" / "mindslice.cmd")] if WINDOWS else [str(BIN)]
 
 if str(PLUGIN / "adapter") not in sys.path:
     sys.path.insert(0, str(PLUGIN / "adapter"))

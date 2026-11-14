@@ -63,9 +63,10 @@ mindslice diff            # staged changes
 mindslice doctor          # full engine checks
 ```
 
-To use it in your own terminal, link it: `ln -sf "$(command -v mindslice)" ~/.local/bin/mindslice` (run in
-the Bash tool; recreate after a plugin update). On Windows, cmd and PowerShell use `bin\mindslice.cmd` in the
-plugin directory (`cygpath -w "$(command -v mindslice).cmd"` in the Bash tool prints its path).
+At session start the plugin writes a small `mindslice` launcher to its data directory and puts it on the Bash
+tool's `PATH`. To use it in your own terminal, link it: `ln -sf "$(command -v mindslice)" ~/.local/bin/mindslice`
+(run in the Bash tool; the launcher keeps its path across plugin updates). On Windows, cmd and PowerShell use the
+`mindslice.cmd` beside it (`cygpath -w "$(command -v mindslice).cmd"` in the Bash tool prints its path).
 
 For nested sessions that must not see your personal memory (for example MindSlice-forge's `claude -p`
 runs), set `MINDSLICE_PLUGIN_ISOLATE=1` in their environment.

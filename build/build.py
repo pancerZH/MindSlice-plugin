@@ -37,13 +37,16 @@ SRC = REPO / "src"
 LOCK = REPO / "build" / "upstream.lock"
 TARGETS = ("claude",)
 CACHE = REPO / "build" / ".cache"
-MAX_TARGET_BYTES = 256_000
+MAX_TARGET_BYTES = 256_000  # everything but images (the directory limits images separately)
+IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg")
+ICON_MAX_BYTES = 2_000_000
 
 sys.path.insert(0, str(SRC / "common"))
 import rules  # noqa: E402
 
 # Top-level paths a plugin directory may contain (anything else is a build bug).
-OUTPUT_ALLOWED = (".claude-plugin/", ".build-info.json", "README.md", "LICENSE", "NOTICE", "hooks/", "bin/",
+# No top-level bin/: Chat and Cowork refuse to install a plugin that has one (the launcher lives in adapter/).
+OUTPUT_ALLOWED = (".claude-plugin/", ".build-info.json", "README.md", "LICENSE", "NOTICE", "hooks/",
                   "adapter/", "skills/")
 LINK_RE = re.compile(r"\]\(([^)\s]+)\)")
 PLACEHOLDER_RE = re.compile(r"\{\{(host|upstream):([A-Za-z0-9_.-]+)\}\}")
@@ -299,6 +302,17 @@ class Build:
         self.files[path] = OutFile(data.encode("utf-8") if isinstance(data, str) else data, executable)
 
 
+def check_icon(data: bytes, where: Path) -> None:
+    """The directory's listing icon: a square PNG of 512 to 2048 px per side, under 2 MB."""
+    if not data.startswith(b"\x89PNG\r\n\x1a\n") or data[12:16] != b"IHDR":
+        raise BuildError(f"{where} is not a PNG")
+    width, height = int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+    if width != height or not 512 <= width <= 2048:
+        raise BuildError(f"{where} is {width}x{height} px; the icon must be square, 512 to 2048 px per side")
+    if len(data) >= ICON_MAX_BYTES:
+        raise BuildError(f"{where} is {len(data)} bytes; the icon must be under 2 MB")
+
+
 def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
 
@@ -339,14 +353,19 @@ def build_target(name: str, up: Upstream, lock: dict[str, str]) -> Build:
         "description": "MindSlice: deliver the standing memory at session start, resume, clear and compaction "
                        "(one page per command, all from one snapshot).",
         "hooks": {cfg["hook_event"]: [{"hooks": hooks}]}}))
-    out.add("bin/mindslice", (tdir / "bin" / "mindslice").read_bytes(), executable=True)
-    cmd_shim = tdir / "bin" / "mindslice.cmd"
+    out.add("adapter/mindslice", (tdir / "launcher" / "mindslice").read_bytes(), executable=True)
+    cmd_shim = tdir / "launcher" / "mindslice.cmd"
     if cmd_shim.is_file():
         data = cmd_shim.read_bytes()
         if b"\n" in data.replace(b"\r\n", b""):
             raise BuildError(f"{cmd_shim} must use CRLF line endings (cmd.exe labels break otherwise)")
-        out.add("bin/mindslice.cmd", data)
+        out.add("adapter/mindslice.cmd", data)
     out.add("README.md", (tdir / "README.md").read_bytes())
+    icon = tdir / "icon.png"
+    if icon.is_file():  # found by the directory and `claude plugin validate` at .claude-plugin/icon.png
+        data = icon.read_bytes()
+        check_icon(data, icon)
+        out.add(".claude-plugin/icon.png", data)
 
     # skills
     skills = cfg["skills"]
@@ -387,7 +406,7 @@ def build_target(name: str, up: Upstream, lock: dict[str, str]) -> Build:
         out.add(out_path, text)
 
     check_links(out.files)
-    size = sum(len(f.data) for f in out.files.values())
+    size = sum(len(f.data) for p, f in out.files.items() if not p.lower().endswith(IMAGE_SUFFIXES))
     if size > MAX_TARGET_BYTES:
         raise BuildError(f"{name}: plugin is {size} bytes (limit {MAX_TARGET_BYTES})")
 

@@ -113,7 +113,7 @@ def atomic_write(path: Path, text: str) -> None:
 
 def bin_path() -> Path:
     """The CLI for the user's own terminal: the sh shim, or ``mindslice.cmd`` for cmd/PowerShell on Windows."""
-    return PLUGIN_ROOT / "bin" / ("mindslice.cmd" if os.name == "nt" else "mindslice")
+    return PLUGIN_ROOT / "adapter" / ("mindslice.cmd" if os.name == "nt" else "mindslice")
 
 
 # ---------------------------------------------------------------------------

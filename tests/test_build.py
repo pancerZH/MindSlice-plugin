@@ -89,20 +89,21 @@ class OutputTest(unittest.TestCase):
             self.assertFalse(f.startswith(("tests/", "evals/", "docs/", ".github/", "src/", "build/")), f)
         self.assertNotIn("adapter/drivers", "\n".join(files))
         self.assertFalse(any(f.startswith("engine/") or "/mindslice/" in f for f in files), "engine is not shipped")
-        total = sum((PLUGIN / f).stat().st_size for f in files)
+        total = sum((PLUGIN / f).stat().st_size for f in files if not f.lower().endswith(build.IMAGE_SUFFIXES))
         self.assertLessEqual(total, build.MAX_TARGET_BYTES)
-        for f in ("adapter/entry.py", "adapter/core.py", "adapter/driver.py", "adapter/provision.py", "bin/mindslice", "hooks/hooks.json",
+        for f in ("adapter/entry.py", "adapter/core.py", "adapter/driver.py", "adapter/provision.py", "adapter/mindslice", "hooks/hooks.json",
                   ".claude-plugin/plugin.json", "LICENSE", "NOTICE", "skills/setup/SKILL.md", "skills/review/SKILL.md"):
             self.assertIn(f, files)
         if os.name != "nt":
-            self.assertTrue(os.access(PLUGIN / "bin" / "mindslice", os.X_OK))
-        self.assertIn("bin/mindslice.cmd", files)
-        cmd = (PLUGIN / "bin" / "mindslice.cmd").read_bytes()
+            self.assertTrue(os.access(PLUGIN / "adapter" / "mindslice", os.X_OK))
+        self.assertIn("adapter/mindslice.cmd", files)
+        self.assertFalse(any(f.startswith("bin/") for f in files), "a top-level bin/ makes Chat and Cowork refuse the plugin")
+        cmd = (PLUGIN / "adapter" / "mindslice.cmd").read_bytes()
         self.assertNotIn(b"\n", cmd.replace(b"\r\n", b""), "mindslice.cmd must be CRLF")
         lines = [line.strip().lower() for line in cmd.decode("ascii").splitlines() if line.strip()]
         self.assertEqual(lines[-1], "exit /b %errorlevel%", "the exit code must be passed on explicitly")
         self.assertNotIn("exit /b", lines[:-1])
-        self.assertNotIn(b"\r", (PLUGIN / "bin" / "mindslice").read_bytes(), "the sh shim must be LF")
+        self.assertNotIn(b"\r", (PLUGIN / "adapter" / "mindslice").read_bytes(), "the sh shim must be LF")
 
     def test_build_info_matches(self) -> None:
         info = json.loads((PLUGIN / ".build-info.json").read_text())
@@ -117,7 +118,7 @@ class OutputTest(unittest.TestCase):
         self.assertEqual(manifest["userConfig"]["python"]["default"], "python3")
         hooks = json.loads((PLUGIN / "hooks" / "hooks.json").read_text())["hooks"]["SessionStart"][0]["hooks"]
         for i, h in enumerate(hooks, 1):
-            self.assertEqual(h["command"], f'sh "${{CLAUDE_PLUGIN_ROOT}}/bin/mindslice" hook {i}')
+            self.assertEqual(h["command"], f'sh "${{CLAUDE_PLUGIN_ROOT}}/adapter/mindslice" hook {i}')
 
     def test_manifest_version(self) -> None:
         manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())
@@ -185,6 +186,23 @@ class BuildCheckTest(unittest.TestCase):
                 dst.writestr(name, data + b"# patched\n" if name == "mindslice/workspace.py" else data)
         with self.assertRaises(build.BuildError):
             build.check_wheel(buf.getvalue(), up, LOCK["version"])
+
+    def test_icon_rules(self) -> None:
+        import struct
+        import zlib
+
+        def png(w: int, h: int) -> bytes:
+            ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
+            chunk = b"IHDR" + ihdr
+            return b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + chunk + struct.pack(">I", zlib.crc32(chunk))
+
+        build.check_icon(png(1024, 1024), Path("icon.png"))
+        for bad in (png(1024, 768), png(256, 256), png(4096, 4096), b"GIF89a" + b"\0" * 30):
+            with self.assertRaises(build.BuildError):
+                build.check_icon(bad, Path("icon.png"))
+        icon = PLUGIN / ".claude-plugin" / "icon.png"
+        if icon.exists():
+            build.check_icon(icon.read_bytes(), icon)
 
     def test_dead_links_fail(self) -> None:
         files = {"skills/a/SKILL.md": build.OutFile(b"see [x](../b/SKILL.md)")}

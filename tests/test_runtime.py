@@ -27,10 +27,17 @@ class HookTest(PluginTestCase):
         return self.run_entry("hook", str(slot), stdin=json.dumps({"session_id": session, "source": "startup"}), **kw)
 
     def test_unconfigured(self) -> None:
-        r = self.hook(1)
+        env_file = self.tmp / "env.sh"
+        env_file.write_text("")
+        r = self.hook(1, env={"CLAUDE_ENV_FILE": str(env_file)})
         self.assertEqual(r.returncode, 0)
         self.assertIn("no memory workspace configured", r.stdout)
         self.assertEqual(self.hook(2).stdout, "")
+        # the command is still provided, so setup can run `mindslice plugin-status` to diagnose
+        text = env_file.read_text()
+        self.assertIn("export PATH=", text)
+        self.assertNotIn("MINDSLICE_PLUGIN_WORKSPACE", text)
+        self.assertTrue((core.plugin_data_dir() / "bin" / "mindslice").is_file())
 
     def test_leftover_bridge_does_not_count_as_configured(self) -> None:
         # uninstall clears the options but not the data dir: hooks must report "not configured", not old memory
@@ -151,15 +158,56 @@ class HookTest(PluginTestCase):
         import driver
 
         text = env_file.read_text()
-        self.assertEqual(text, driver.env_lines(ws))
+        self.assertEqual(text, driver.env_lines(ws, driver.launcher_dir()))
         self.assertEqual(text.count("export MINDSLICE_PLUGIN_WORKSPACE="), 1)
         self.assertIn("export MINDSLICE_PLUGIN_PYTHON=", text)
         self.assertIn("export MINDSLICE_PLUGIN_DATA=", text)
-        self.assertNotIn("\\", text.splitlines()[1])  # forward slashes for Git Bash
+        python_line = next(line for line in text.splitlines() if line.startswith("export MINDSLICE_PLUGIN_PYTHON="))
+        self.assertNotIn("\\", python_line)  # forward slashes for Git Bash
+
+    @unittest.skipIf(WINDOWS, "POSIX shell")
+    def test_bash_tool_gets_mindslice_on_path(self) -> None:
+        # what Claude does with the env file: run it as shell code before each Bash command (W4)
+        ws = self.tmp / "ws"
+        self.configure(ws)
+        env_file = self.tmp / "env.sh"
+        env_file.write_text("")
+        self.hook(1, env={"CLAUDE_ENV_FILE": str(env_file)})
+        launcher = core.plugin_data_dir() / "bin" / "mindslice"
+        self.assertTrue(os.access(launcher, os.X_OK))
+        project = self.tmp / "project"
+        project.mkdir()
+        bash_tool = {"PATH": "/usr/bin:/bin", "HOME": str(self.tmp), "MINDSLICE_PLUGIN_ENGINE_DIR": str(helpers.ENGINE)}
+        script = f". {env_file}; . {env_file}; command -v mindslice; echo \"$PATH\"; mindslice --json status"
+        r = subprocess.run(["sh", "-c", script], cwd=project, capture_output=True, text=True, env=bash_tool)
+        lines = r.stdout.splitlines()
+        self.assertEqual(lines[0], str(launcher), r.stderr)
+        self.assertEqual(lines[1].split(":").count(str(launcher.parent)), 1)  # added once, however often sourced
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(str(ws), r.stdout)  # the CLI used the plugin workspace
+
+    def test_launcher_follows_the_installed_version(self) -> None:
+        import driver
+
+        d = driver.write_launchers()
+        text = (d / "mindslice").read_text()
+        self.assertIn((core.PLUGIN_ROOT / "adapter" / "mindslice").as_posix(), text)
+        mtime = (d / "mindslice").stat().st_mtime_ns
+        driver.write_launchers()  # unchanged: not rewritten
+        self.assertEqual((d / "mindslice").stat().st_mtime_ns, mtime)
+
+    def test_path_entry_on_windows(self) -> None:
+        from unittest import mock
+
+        import driver
+
+        with mock.patch.object(driver.os, "name", "nt"), mock.patch.object(driver.shutil, "which", return_value=None):
+            self.assertEqual(driver.path_entry(Path("C:/Users/Wenzhe Zhang/.claude/plugins/data/x/bin")),
+                             "/c/Users/Wenzhe Zhang/.claude/plugins/data/x/bin")
 
     @unittest.skipUnless(shutil.which("sh"), "no sh")
     def test_hook_through_the_sh_launcher(self) -> None:
-        # exactly what hooks.json runs: sh <plugin>/bin/mindslice hook <slot>
+        # exactly what hooks.json runs: sh <plugin>/adapter/mindslice hook <slot>
         self.configure(self.tmp / "ws")
         r = self.run_entry("hook", "1", stdin=json.dumps({"session_id": "sh"}), cmd=["sh", str(BIN)])
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -395,8 +443,12 @@ class IsolationTest(PluginTestCase):
         ws = self.tmp / "ws"
         self.configure(ws)
         env = {"MINDSLICE_PLUGIN_ISOLATE": "1"}
-        hook = self.run_entry("hook", "1", stdin="{}", env=env)
+        env_file = self.tmp / "env.sh"
+        env_file.write_text("")
+        hook = self.run_entry("hook", "1", stdin="{}", env=dict(env, CLAUDE_ENV_FILE=str(env_file)))
         self.assertEqual((hook.returncode, hook.stdout), (0, ""))
+        self.assertIn("export PATH=", env_file.read_text())  # Forge still calls `mindslice -w ...`
+        self.assertNotIn("MINDSLICE_PLUGIN_WORKSPACE", env_file.read_text())
         reqs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
                 {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}]
         mcp = self.run_entry("mcp", "--workspace", str(ws), stdin="".join(json.dumps(r) + "\n" for r in reqs), env=env)

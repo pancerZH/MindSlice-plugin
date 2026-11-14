@@ -2,9 +2,9 @@ Run `mindslice plugin-status` in the Bash tool. It prints the configured workspa
 much of the startup capacity the standing memory uses, and the result of a handshake with the plugin's own
 MCP entry point.
 
-- **`mindslice: command not found`**: the plugin is not enabled in this session (or the session predates the
-  install). Ask the user to run `/plugin`, check that `mindslice` is installed and enabled, and start a new
-  session.
+- **`mindslice: command not found`**: the plugin's session-start hook did not run in this session (the plugin
+  is disabled, or the session started before it was installed or before Python 3.12+ was available). Ask the
+  user to run `/plugin`, check that `mindslice` is installed and enabled, and start a new session.
 - **Python error** (`needs Python >= 3.12`, or `no Python found`): help the user install Python 3.12 or newer
   (Homebrew, the distribution's package, `uv python install 3.12`, or pyenv; on Windows the python.org
   installer). The plugin finds `python3.12`/`python3.13` on `PATH`, in `/opt/homebrew/bin`, `/usr/local/bin`,

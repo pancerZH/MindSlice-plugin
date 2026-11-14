@@ -3,6 +3,8 @@
 * text=auto eol=lf
 # cmd.exe needs CRLF for labels and goto.
 *.cmd text eol=crlf
+*.png binary
+*.jpg binary
 
 # Build output of build/build.py: committed because marketplaces install from the repository, but not hand-edited.
 plugins/** linguist-generated=true

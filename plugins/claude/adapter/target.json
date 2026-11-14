@@ -1,6 +1,6 @@
 {
   "target": "claude",
-  "plugin_version": "0.1.6-3",
+  "plugin_version": "0.1.6-4",
   "engine_version": "0.1.6",
   "page_limit": 9500,
   "hook_slots": 4,

@@ -8,8 +8,8 @@ on disk is kept unless the user explicitly asks to delete it.**
 1. Run `mindslice plugin-status` in the Bash tool and note the workspace path (`<workspace>`).
 2. Check what the workspace holds: `<workspace>/overlay/` and `<workspace>/staging/` (cards and pending
    changes), `<workspace>/slices/`, and the external folders listed in `<workspace>/mounts.toml`.
-3. Check for leftovers outside the plugin: a `~/.local/bin/mindslice` link pointing into the plugin's
-   directory (`ls -l ~/.local/bin/mindslice`), and any manual MindSlice MCP server, `boot` hook or
+3. Check for leftovers outside the plugin: a `~/.local/bin/mindslice` link to the plugin's launcher in
+   `~/.claude/plugins/data/` (`ls -l ~/.local/bin/mindslice`), and any manual MindSlice MCP server, `boot` hook or
    `CLAUDE.md` rule (see "Migrating from a manual MindSlice setup" in [SKILL.md](SKILL.md)).
 
 ## Step 2 - Confirm with the user (mandatory)
@@ -28,8 +28,9 @@ The user runs, in Claude Code: `/plugin uninstall mindslice@mindslice` (or `/plu
 mindslice@mindslice`). From a shell: `claude plugin uninstall mindslice@mindslice`. The marketplace can stay;
 `/plugin marketplace remove mindslice` removes it too.
 
-Remove only the leftovers the user agreed to: `rm ~/.local/bin/mindslice` only if it is a link into the
-plugin; manual configuration as the setup skill's migration section describes.
+Remove only the leftovers the user agreed to: `rm ~/.local/bin/mindslice` only if it is a link to the plugin's
+launcher (uninstalling removes the launcher, so the link would dangle); manual configuration as the setup skill's
+migration section describes.
 
 ## Step 4 - Delete the workspace (only if the user explicitly asked)
 

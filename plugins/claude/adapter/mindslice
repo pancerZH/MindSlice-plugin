@@ -1,11 +1,13 @@
 #!/bin/sh
-# MindSlice plugin CLI (also the hook launcher): run the plugin's entry point with a usable Python.
+# MindSlice plugin CLI and hook launcher (adapter/mindslice): run entry.py next to it with a usable Python.
+# Not in a top-level bin/, which Chat and Cowork refuse; slot 1 puts <plugin data>/bin/mindslice on the Bash
+# tool's PATH instead, a launcher that runs this file.
 # Order: $MINDSLICE_PLUGIN_PYTHON (exported by the session-start hook), the plugin's "Python command" option,
 # then py/python/python3 on Windows (Git Bash) or python3/python elsewhere. entry.py upgrades to 3.12+ itself.
 p=$0
 case "${OS:-}" in Windows_NT) p=$(printf '%s' "$p" | tr '\\' '/') ;; esac  # C:\...\bin\mindslice -> C:/...
 while [ -h "$p" ]; do l=$(readlink "$p"); case $l in /*) p=$l ;; *) p=$(dirname "$p")/$l ;; esac; done
-entry=$(dirname "$p")/../adapter/entry.py
+entry=$(dirname "$p")/entry.py
 # Windows: hand Python a C:/... path. MSYS converts /c/... arguments for native programs only while
 # MSYS_NO_PATHCONV is unset, and an inherited MSYS_NO_PATHCONV=1 would leave python.exe a path it reads as C:\c\...
 case "${OS:-}" in Windows_NT) if command -v cygpath >/dev/null 2>&1; then entry=$(cygpath -m "$entry"); fi ;; esac

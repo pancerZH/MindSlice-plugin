@@ -41,7 +41,7 @@ fail=0
 pass() { echo "PASS $*"; }
 bad() { echo "FAIL $*"; fail=1; }
 
-ms() { CLAUDE_PLUGIN_DATA="$WORK/data" "$PLUGIN/bin/mindslice" "$@"; }  # the plugin's own CLI, for seeding
+ms() { CLAUDE_PLUGIN_DATA="$WORK/data" "$PLUGIN/adapter/mindslice" "$@"; }  # the plugin's own CLI, for seeding
 FILLER="$("$PY" -c 'print("这是一条常驻规则的填充内容，用于撑大启动页。" * 180)')"
 seed() {  # seed <workspace> <filler cards> <phrase>
   ms init "$1" > /dev/null
