@@ -4,8 +4,8 @@ MCP entry point.
 
 - **`mindslice: command not found`** (or a `mindslice` outside the plugin folder answers, without
   `plugin-status`): Antigravity appends the plugin's `bin/` at the end of `PATH`, so check `which -a mindslice`
-  (or `~/.gemini/config/plugins/mindslice/bin/mindslice plugin-status`) first in case an older `mindslice` comes
-  earlier on `PATH` (see "Migrating from a manual MindSlice setup"). If the plugin's own command is absent, the
+  (`where mindslice` on Windows; or `~/.gemini/config/plugins/mindslice/bin/mindslice plugin-status`) first in case
+  an older `mindslice` comes earlier on `PATH` (see "Migrating from a manual MindSlice setup"). If the plugin's own command is absent, the
   plugin is not enabled in this conversation: ask the user to open `/plugin` in the CLI, or give them
   `[mindslice](customization://mindslice)` in the Antigravity app (keyed on the install folder name if different),
   check that `mindslice` is installed and enabled, and start a new conversation. The plugin stays disabled until

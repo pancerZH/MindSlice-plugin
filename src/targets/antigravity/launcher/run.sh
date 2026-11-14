@@ -13,10 +13,16 @@ while [ -L "$self" ]; do
 done
 here=$(CDPATH= cd -- "$(dirname -- "$self")" && pwd)
 entry="$here/@ENTRY@"
-if [ "${OS:-}" = "Windows_NT" ] && command -v cygpath >/dev/null 2>&1; then
-  entry=$(cygpath -m "$entry")
+## On Windows (Git Bash), py comes first: python3 is often the Microsoft Store stub. Elsewhere a `py` on PATH
+## may be an unrelated tool (pip's pythonpy), and exec leaves no fallback, so it is not tried at all.
+pythons="python3 python"
+if [ "${OS:-}" = "Windows_NT" ]; then
+  pythons="py python3 python"
+  if command -v cygpath >/dev/null 2>&1; then
+    entry=$(cygpath -m "$entry")
+  fi
 fi
-for py in py python3 python; do
+for py in $pythons; do
   if command -v "$py" >/dev/null 2>&1; then
     exec "$py" "$entry" @ARGS@
   fi

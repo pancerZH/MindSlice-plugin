@@ -38,7 +38,7 @@ LOCK = REPO / "build" / "upstream.lock"
 TARGETS = ("claude", "antigravity")
 CACHE = REPO / "build" / ".cache"
 MAX_TARGET_BYTES = 256_000  # everything but images (the directory limits images separately)
-IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".svg", ".webp")
+IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")  # binary images only: an SVG is text and counts
 ICON_MAX_BYTES = 2_000_000
 
 sys.path.insert(0, str(SRC / "common"))

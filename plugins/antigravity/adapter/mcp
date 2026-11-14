@@ -11,10 +11,14 @@ while [ -L "$self" ]; do
 done
 here=$(CDPATH= cd -- "$(dirname -- "$self")" && pwd)
 entry="$here/entry.py"
-if [ "${OS:-}" = "Windows_NT" ] && command -v cygpath >/dev/null 2>&1; then
-  entry=$(cygpath -m "$entry")
+pythons="python3 python"
+if [ "${OS:-}" = "Windows_NT" ]; then
+  pythons="py python3 python"
+  if command -v cygpath >/dev/null 2>&1; then
+    entry=$(cygpath -m "$entry")
+  fi
 fi
-for py in py python3 python; do
+for py in $pythons; do
   if command -v "$py" >/dev/null 2>&1; then
     exec "$py" "$entry" mcp
   fi

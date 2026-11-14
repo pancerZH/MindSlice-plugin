@@ -38,6 +38,7 @@ PLUGIN_ROOT = Path(os.path.abspath(__file__)).parent.parent
 REAL_PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 HOOK_BYTE_LIMIT = 48000  # Antigravity truncates a system message beyond 49,152 bytes, its own ~230-byte wrapper included
 BRIDGE_WAIT = 5.0  # seconds the hook waits for the MCP server's first bridge file
+FRESH_ERROR = 15.0  # seconds: a bridge error newer than this came from the MCP server starting with this hook
 APP_DIRS = ("antigravity-cli", "antigravity", "antigravity-ide")  # ~/.gemini/<app>: CLI, Antigravity 2.0, IDE
 STAGE_WRITES_WARNING = "stage_writes_warning.txt"
 COLD_START_HINT = (" (If the MindSlice MCP tools `manifest`, `search`, `read`, `write` are available in this "
@@ -78,26 +79,33 @@ def plugin_data_dir() -> Path:
     app = _clean(os.environ.get("ANTIGRAVITY_APP_DATA_DIR"))
     if app:
         app_base = Path(app) / "plugin_data"
-        for name in _dir_names():
-            candidate = app_base / name
+        dirs = [app_base / name for name in _dir_names()]
+        newest = _newest_bridge_dir(dirs)
+        if newest is not None:
+            return newest
+        for candidate in dirs:
             if candidate.is_dir():
                 return candidate
         if cache is not None and (cache / "active_workspace.json").is_file():
             return cache
-        return app_base / PLUGIN_ROOT.name
+        return dirs[0]
     if cache is None:
         raise OSError("mindslice plugin: no plugin data directory (PLUGIN_DATA) and no home directory")
     candidates = [home / ".gemini" / app_dir / "plugin_data" / name
                   for app_dir in APP_DIRS for name in _dir_names()] + [cache]
+    return _newest_bridge_dir(candidates) or cache
+
+
+def _newest_bridge_dir(candidates: list[Path]) -> Path | None:
+    """The candidate whose bridge file was written last (several can exist: an old install folder name, a
+    workspace plugin's cache directory)."""
     found = []
     for candidate in candidates:
         try:
-            found.append(((candidate / "active_workspace.json").stat().st_mtime, candidate))
+            found.append(((candidate / "active_workspace.json").stat().st_mtime, str(candidate), candidate))
         except OSError:
             pass
-    if found:
-        return max(found)[1]
-    return cache
+    return max(found)[2] if found else None
 
 
 def _invalid_workspace_message(raw: str, reason: str) -> str:
@@ -169,21 +177,23 @@ def configured_workspace() -> str | None:
     return _record_setting(value)
 
 
-def _record_setting(value: str) -> str | None:
+def _record_setting(value: str) -> str:
     """Point the bridge file at the setting as soon as the MCP server reads it, before the workspace is checked:
     the server refuses an invalid or occupied folder and exits, and the hook must then report that setting, not
-    keep delivering the workspace an earlier setting named."""
+    keep delivering the workspace an earlier setting named.
+
+    An invalid setting raises instead of returning None: resolve() would otherwise fall through to
+    MINDSLICE_WORKSPACE and silently serve (and record in the bridge) a workspace the user did not choose."""
     import core
 
     path, err = _validate_workspace(value)
     if err is not None or path is None:
-        sys.stderr.write(f"mindslice plugin: {err}\n")
         try:
             core.atomic_write(core.bridge_path(),
                               json.dumps({"invalid_workspace": value, "error": err}, ensure_ascii=False) + "\n")
         except OSError:
             pass
-        return None
+        raise core.PluginError(err)
     if core.read_bridge() != str(path):
         core.write_bridge(path)
     return value
@@ -200,8 +210,10 @@ def stage_writes_enabled() -> bool:
     if low in ("1", "true", "yes", "on"):
         _set_stage_warning(None)
         return True
-    note = (f"Note: the plugin setting \"Review every write\" (`stage_writes`) is set to {cleaned!r}, which is not "
-            "`true` or `false`; staging every write for safety until the user sets it to `true` or `false`.")
+    note = (f"Note: when the MindSlice MCP server last started, the plugin setting \"Review every write\" "
+            f"(`stage_writes`) was {cleaned!r}, which is not `true` or `false`, so it stages every write for safety "
+            "until the user sets it to `true` or `false` (if they already have, this note disappears from the next "
+            "conversation).")
     sys.stderr.write(f"mindslice plugin: {note}\n")
     _set_stage_warning(note)
     return True
@@ -248,11 +260,28 @@ def _await_bridge() -> None:
     still be starting (or installing the engine) when the hook runs."""
     import core
 
-    if core.resolve("hook").state != core.UNSET or _bridge_error() is not None:
+    if core.resolve("hook").state != core.UNSET:
         return
+    # An error the MCP server recorded at an earlier start may be stale: the user may have fixed the setting since,
+    # and this conversation's server is about to replace it. Only an error written just now (by the server starting
+    # alongside this hook) ends the wait early.
+    fresh_after = time.time() - FRESH_ERROR
     deadline = time.monotonic() + BRIDGE_WAIT
-    while time.monotonic() < deadline and core.read_bridge() is None and _bridge_error() is None:
+    while core.read_bridge() is None and not _fresh_bridge_error(fresh_after):
+        if time.monotonic() >= deadline:
+            return
         time.sleep(0.1)
+
+
+def _fresh_bridge_error(after: float) -> bool:
+    import core
+
+    if _bridge_error() is None:
+        return False
+    try:
+        return core.bridge_path().stat().st_mtime >= after
+    except OSError:
+        return False
 
 
 def inject(pages: list[str]) -> dict:
@@ -282,7 +311,7 @@ def run_hook(args: list[str]) -> int:
     err = _bridge_error()
     state = core.resolve("hook").state
     if err is not None and state == core.UNSET:
-        pages = [f"[MindSlice plugin: memory not loaded] {err}"]
+        pages = [f"[MindSlice plugin: memory not loaded] {err}" + COLD_START_HINT]
     else:
         result = core.hook_pages(session, int(cfg["page_limit"]), int(cfg["hook_slots"]))
         pages = list(result.pages)

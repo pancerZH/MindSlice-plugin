@@ -194,6 +194,45 @@ class HookTest(PluginTestCase):
             self.assertIn(expected, r.stdout, bad)
         self.assertEqual(snapshot_files(PLUGIN), plugin_before)
 
+    def test_invalid_setting_does_not_fall_through_to_env(self) -> None:
+        # an invalid setting must fail the server, not silently serve (and record) MINDSLICE_WORKSPACE instead
+        other = self.tmp / "other"
+        Workspace.init(other).close()
+        mcp = self.run_entry("mcp", stdin="", cwd=PLUGIN,
+                             env={"MINDSLICE_PLUGIN_OPTION_WORKSPACE": "rel-path", "MINDSLICE_WORKSPACE": str(other)})
+        self.assertEqual(mcp.returncode, 1)
+        self.assertIn("relative path", mcp.stderr)
+        self.assertEqual(mcp.stderr.count("relative path"), 1)  # reported once
+        self.assertIsNone(core.read_bridge())
+
+    def test_stale_bridge_error_waits_for_the_new_server(self) -> None:
+        # an error recorded by an earlier conversation's server must not end the wait: the user may have fixed the
+        # setting, and this conversation's server replaces the bridge a moment after the hook starts
+        import driver
+
+        ws = self.tmp / "ws"
+        Workspace.init(ws).close()
+        write_always(ws, "prefs/p", "- FIXED-PHRASE-3")
+        core.atomic_write(core.bridge_path(), json.dumps({"invalid_workspace": "rel", "error": "OLD-ERROR"}) + "\n")
+        stamp = time.time() - driver.FRESH_ERROR - 60
+        os.utime(core.bridge_path(), (stamp, stamp))
+        timer = threading.Timer(1.0, core.write_bridge, args=(ws,))
+        timer.start()
+        try:
+            r = self.hook(1, session="stale")
+        finally:
+            timer.join()
+        self.assertIn("FIXED-PHRASE-3", r.stdout)
+        self.assertNotIn("OLD-ERROR", r.stdout)
+        # still stale and nothing replaces it: the hook waits it out, then reports it with the recovery hint
+        core.atomic_write(core.bridge_path(), json.dumps({"invalid_workspace": "rel", "error": "OLD-ERROR"}) + "\n")
+        os.utime(core.bridge_path(), (stamp, stamp))
+        start = time.monotonic()
+        r = self.hook(1, session="stale2")
+        self.assertGreaterEqual(time.monotonic() - start, 4.5)
+        self.assertIn("OLD-ERROR", r.stdout)
+        self.assertIn("include_always=true", r.stdout)
+
     def test_refused_setting_replaces_an_older_bridge(self) -> None:
         # the user points the setting at a folder with other files: the MCP server refuses it and exits, and the
         # next conversation must report that folder instead of delivering the workspace named before
@@ -327,6 +366,15 @@ class DataDirTest(PluginTestCase):
         installed = app / "plugin_data" / "mindslice"
         installed.mkdir(parents=True)
         self.assertEqual(driver.plugin_data_dir(), installed)
+        # two app data dirs (an old install folder name and the current one): the newest bridge wins, not name order
+        names = driver._dir_names()
+        dirs = [app / "plugin_data" / n for n in names]
+        for i, d in enumerate(dirs):
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "active_workspace.json").write_text('{"workspace": "/ws"}\n')
+            stamp = time.time() - 100 * (len(dirs) - i)  # last name in the list is the newest
+            os.utime(d / "active_workspace.json", (stamp, stamp))
+        self.assertEqual(driver.plugin_data_dir(), dirs[-1])
 
 
 @only("antigravity")
@@ -348,10 +396,18 @@ class LauncherTest(PluginTestCase):
         tools.mkdir()
         for name in ("dirname", "readlink"):
             (tools / name).symlink_to(shutil.which(name))
-        # py first (on Windows Git Bash, python3 is often the Microsoft Store stub), then python3, then python
+        # outside Windows a `py` on PATH is never used (it may be pythonpy, and exec leaves no fallback)
         first = subprocess.run([str(PLUGIN / "adapter" / "mcp")], capture_output=True, text=True,
                                env={"PATH": f"{launcher.parent}:{py3.parent}:{tools}"})
-        self.assertEqual(first.stdout.strip(), f"LAUNCHER {PLUGIN / 'adapter' / 'entry.py'} mcp", first.stderr)
+        self.assertEqual(first.stdout.strip(), f"PY3 {PLUGIN / 'adapter' / 'entry.py'} mcp", first.stderr)
+        only_py = subprocess.run([str(PLUGIN / "adapter" / "mcp")], capture_output=True, text=True,
+                                 env={"PATH": f"{launcher.parent}:{tools}"})
+        self.assertEqual(only_py.returncode, 1, only_py.stdout)
+        # on Windows (Git Bash) py comes first: python3 is often the Microsoft Store stub
+        win_first = subprocess.run([str(PLUGIN / "adapter" / "mcp")], capture_output=True, text=True,
+                                   env={"PATH": f"{launcher.parent}:{py3.parent}:{tools}", "OS": "Windows_NT"})
+        self.assertEqual(win_first.stdout.strip(), f"LAUNCHER {PLUGIN / 'adapter' / 'entry.py'} mcp",
+                         win_first.stderr)
         env = {"PATH": f"{py3.parent}:{py.parent}:{tools}"}
         mcp = subprocess.run([str(PLUGIN / "adapter" / "mcp")], capture_output=True, text=True, env=env)
         self.assertEqual(mcp.stdout.strip(), f"PY3 {PLUGIN / 'adapter' / 'entry.py'} mcp", mcp.stderr)

@@ -34,8 +34,8 @@ MCP entry point.
 
 - **`mindslice: command not found`** (or a `mindslice` outside the plugin folder answers, without
   `plugin-status`): Antigravity appends the plugin's `bin/` at the end of `PATH`, so check `which -a mindslice`
-  (or `~/.gemini/config/plugins/mindslice/bin/mindslice plugin-status`) first in case an older `mindslice` comes
-  earlier on `PATH` (see "Migrating from a manual MindSlice setup"). If the plugin's own command is absent, the
+  (`where mindslice` on Windows; or `~/.gemini/config/plugins/mindslice/bin/mindslice plugin-status`) first in case
+  an older `mindslice` comes earlier on `PATH` (see "Migrating from a manual MindSlice setup"). If the plugin's own command is absent, the
   plugin is not enabled in this conversation: ask the user to open `/plugin` in the CLI, or give them
   `[mindslice](customization://mindslice)` in the Antigravity app (keyed on the install folder name if different),
   check that `mindslice` is installed and enabled, and start a new conversation. The plugin stays disabled until
@@ -209,7 +209,7 @@ you found, and remove it **only after they agree**, editing surgically so every 
 - **The PyPI/checkout `mindslice` command** can stay, but it comes before the plugin's command on the
   terminal tool's PATH (the plugin's `bin/` is appended last) and does not know the plugin's workspace: if
   `command -v mindslice` does not print a path inside the plugin folder, find the plugin's own binary with
-  `which -a mindslice` (typically `~/.gemini/config/plugins/mindslice/bin/mindslice`) and call that full path,
+  `which -a mindslice` (`where mindslice` on Windows; typically `~/.gemini/config/plugins/mindslice/bin/mindslice`) and call that full path,
   or uninstall the other one with the user's agreement. Removing a `MINDSLICE_WORKSPACE` export from a shell
   profile is worth suggesting: it overrides the plugin's choice of workspace for every `mindslice` command.
 
