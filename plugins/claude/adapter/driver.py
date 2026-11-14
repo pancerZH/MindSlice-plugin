@@ -1,8 +1,8 @@
 """Claude Code driver: where Claude puts plugin data and options, and how its SessionStart hooks deliver pages.
 
-Hooks: ``hooks/hooks.json`` runs ``sh adapter/mindslice hook <slot>`` for slots 1..K in one matcher-less
-``SessionStart`` group (startup, resume, clear, compact); the shim picks a Python (``py`` first on Windows), so
-hooks need no configuration. Claude runs them in parallel (``sh -c`` on macOS/Linux, Git Bash on Windows) and
+Hooks: ``hooks/hooks.json`` runs ``sh adapter/hook-<slot>`` for slots 1..K in one matcher-less
+``SessionStart`` group (startup, resume, clear, compact); each launcher picks a Python (``py``, ``python3``,
+``python``), so hooks need no configuration. Claude runs them in parallel (``sh -c`` on macOS/Linux, Git Bash on Windows) and
 adds each one's plain-text stdout to the context (up to 10,000 characters each), so slot ``i`` prints page ``i``
 of one shared snapshot.
 
@@ -13,9 +13,10 @@ through ``$CLAUDE_ENV_FILE``, puts that directory first on the Bash tool's PATH,
 and, once resolved, ``MINDSLICE_PLUGIN_WORKSPACE``. It does so in every state (unconfigured, isolated), since
 ``mindslice plugin-status`` is how setup diagnoses those states.
 
-The MCP server's command is ``${CLAUDE_PLUGIN_ROOT}/adapter/mindslice`` itself (the plugin directory refuses
-commands it cannot follow, such as a configurable interpreter): the sh launcher on macOS/Linux, ``mindslice.cmd``
-on Windows, where Claude's spawn resolves the name through PATHEXT. Its workspace option arrives in the
+The MCP server's command is ``${CLAUDE_PLUGIN_ROOT}/adapter/mcp`` itself (the plugin directory refuses
+commands it cannot follow, such as a configurable interpreter, and follows a script only when it uses no variable
+but ``CLAUDE_PLUGIN_ROOT``): the sh launcher on macOS/Linux, ``mcp.cmd`` on Windows, where Claude's spawn
+resolves the name through PATHEXT. Its workspace option arrives in the
 environment (``MINDSLICE_PLUGIN_OPTION_WORKSPACE``), not on the command line.
 """
 
@@ -38,28 +39,29 @@ CLI_HINT = ("The `mindslice` CLI is on the Bash tool's PATH and uses this worksp
             "Run `mindslice apply` or `discard` only when the user approves it explicitly (see /mindslice:review).")
 
 
-def _env(name: str) -> str | None:
-    value = os.environ.get(name, "").strip()
+def _clean(value: str | None) -> str | None:
+    """An option value, or None when empty or left unsubstituted (``${user_config.x}``). Callers read each
+    variable by its literal name."""
+    value = (value or "").strip()
     return value if value and "${" not in value else None
 
 
 def plugin_data_dir() -> Path:
     # Claude sets CLAUDE_PLUGIN_DATA for hooks and the MCP server, not for the Bash tool: there the CLI uses the
     # MINDSLICE_PLUGIN_DATA that slot 1 exported, so it shares the engine copy and the bridge file.
-    data = _env("CLAUDE_PLUGIN_DATA") or _env("MINDSLICE_PLUGIN_DATA")
+    data = _clean(os.environ.get("CLAUDE_PLUGIN_DATA")) or _clean(os.environ.get("MINDSLICE_PLUGIN_DATA"))
     return Path(data) if data else Path.home() / ".cache" / "mindslice-plugin" / NAME
 
 
 def configured_workspace() -> str | None:
     # hooks: Claude's own variable; the MCP server: the copy plugin.json puts in its environment
-    return _env("CLAUDE_PLUGIN_OPTION_WORKSPACE") or _env("MINDSLICE_PLUGIN_OPTION_WORKSPACE")
+    return (_clean(os.environ.get("CLAUDE_PLUGIN_OPTION_WORKSPACE"))
+            or _clean(os.environ.get("MINDSLICE_PLUGIN_OPTION_WORKSPACE")))
 
 
 def stage_writes_enabled() -> bool:
-    for name in ("MINDSLICE_PLUGIN_STAGE_WRITES", "CLAUDE_PLUGIN_OPTION_STAGE_WRITES"):
-        if (_env(name) or "").lower() in ("1", "true", "yes", "on"):
-            return True
-    return False
+    values = (os.environ.get("MINDSLICE_PLUGIN_STAGE_WRITES"), os.environ.get("CLAUDE_PLUGIN_OPTION_STAGE_WRITES"))
+    return any((_clean(v) or "").lower() in ("1", "true", "yes", "on") for v in values)
 
 
 def _hook_input() -> dict:
@@ -94,7 +96,7 @@ def write_launchers() -> Path:
     """``<plugin data>/bin/mindslice`` (and ``mindslice.cmd`` on Windows): stable paths that run the plugin
     version installed now with the interpreter this hook runs on (already checked to be 3.12+), refreshed at every
     session start, so links to them survive plugin updates. They run entry.py directly: the Bash tool and the
-    user's terminal have no ``CLAUDE_PLUGIN_ROOT`` for ``adapter/mindslice``."""
+    user's terminal have no ``CLAUDE_PLUGIN_ROOT``."""
     import core
 
     d = launcher_dir()
@@ -133,7 +135,7 @@ def env_lines(workspace: Path | None, launchers: Path | None = None) -> str:
     """What slot 1 adds to ``$CLAUDE_ENV_FILE``: ``export NAME='value'`` lines (forward slashes for Git Bash on
     Windows) and the PATH entry for the launcher, added once."""
     lines = ""
-    data = _env("CLAUDE_PLUGIN_DATA")
+    data = _clean(os.environ.get("CLAUDE_PLUGIN_DATA"))
     if data:  # namespaced: the Bash tool's environment is shared by every plugin
         lines += f"export MINDSLICE_PLUGIN_DATA={shlex.quote(Path(data).as_posix())}\n"
     if launchers is not None:
@@ -149,7 +151,7 @@ def _export_env(workspace: Path | None) -> None:
         launchers: Path | None = write_launchers()
     except OSError:
         launchers = None
-    env_file = _env("CLAUDE_ENV_FILE")
+    env_file = _clean(os.environ.get("CLAUDE_ENV_FILE"))
     if not env_file:
         return
     block = env_lines(workspace, launchers)

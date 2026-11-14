@@ -89,7 +89,7 @@ class MCPTest(PluginTestCase):
             self.assertTrue(r.get("staged") or "staging" in json.dumps(r), r)
 
     def test_mcp_as_the_manifest_starts_it(self) -> None:
-        # plugin.json: command ${CLAUDE_PLUGIN_ROOT}/adapter/mindslice (mindslice.cmd on Windows), args ["mcp"],
+        # plugin.json: command ${CLAUDE_PLUGIN_ROOT}/adapter/mcp (mcp.cmd on Windows), no arguments,
         # the workspace option in the environment
         manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())["mcpServers"]["mindslice"]
         command = manifest["command"].replace("${CLAUDE_PLUGIN_ROOT}", str(PLUGIN))
@@ -102,7 +102,7 @@ class MCPTest(PluginTestCase):
         self.assertNotIn("CLAUDE_PLUGIN_ROOT", manifest["env"])
         os.environ["CLAUDE_PLUGIN_ROOT"] = str(PLUGIN)
         req = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
-        r = self.run_entry(*manifest["args"], stdin=json.dumps(req) + "\n", env=env, cmd=[command])
+        r = self.run_entry(*manifest.get("args", []), stdin=json.dumps(req) + "\n", env=env, cmd=[command])
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads(r.stdout.splitlines()[0])["id"], 1)
         self.assertEqual(core.read_bridge(), str(self.root))

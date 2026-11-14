@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import helpers
-from helpers import BIN, ENTRY, SHIM, WINDOWS, PluginTestCase, snapshot_files, write_always
+from helpers import ENTRY, PLUGIN, WINDOWS, PluginTestCase, snapshot_files, write_always
 
 import shutil
 
@@ -138,7 +138,7 @@ class HookTest(PluginTestCase):
         self.assertEqual(mcp.returncode, 1)
         self.assertIn("not empty and is not a MindSlice workspace", mcp.stderr)
         self.assertNotIn("mindslice init", mcp.stderr)
-        cli = self.run_entry("status", cmd=SHIM)
+        cli = self.run_entry("status", cmd=self.shim())
         self.assertEqual(cli.returncode, 1)
         self.assertEqual(snapshot_files(occupied), before)
         # a plain file is refused the same way
@@ -207,9 +207,9 @@ class HookTest(PluginTestCase):
 
     @unittest.skipUnless(shutil.which("sh"), "no sh")
     def test_hook_through_the_sh_launcher(self) -> None:
-        # exactly what hooks.json runs: sh <plugin>/adapter/mindslice hook <slot>
+        # exactly what hooks.json runs: sh <plugin>/adapter/hook-<slot>
         self.configure(self.tmp / "ws")
-        r = self.run_entry("hook", "1", stdin=json.dumps({"session_id": "sh"}), cmd=["sh", str(BIN)])
+        r = self.run_entry(stdin=json.dumps({"session_id": "sh"}), cmd=["sh", str(PLUGIN / "adapter" / "hook-1")])
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue(r.stdout.startswith("[MindSlice standing memory · page 1/1"), r.stdout[:200])
 
@@ -248,7 +248,7 @@ class HookTest(PluginTestCase):
             write_always(ws, f"big/b{i}", "- " + ("长规则 " * 2200))
         last = self.hook(4, session="ovf")
         self.assertIn("# Standing memory overflow", last.stdout)
-        status = self.run_entry("plugin-status", cmd=SHIM)
+        status = self.run_entry("plugin-status", cmd=self.shim())
         self.assertEqual(status.returncode, 1)
         self.assertIn("pages but only 4 are delivered", status.stdout)
 
@@ -256,11 +256,11 @@ class HookTest(PluginTestCase):
         ws = self.tmp / "plugin-status"  # a path that looks like the subcommand must not confuse routing
         from mindslice import Workspace
         Workspace.init(ws).close()
-        r = self.run_entry("-w", str(ws), "plugin-status", "--json", cmd=SHIM)
+        r = self.run_entry("-w", str(ws), "plugin-status", "--json", cmd=self.shim())
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(json.loads(r.stdout)["workspace"], str(ws))
         self.assertEqual(json.loads(self.run_entry("--workspace", str(ws), "plugin-status", "--json",
-                                                   cmd=SHIM).stdout)["workspace"], str(ws))
+                                                   cmd=self.shim()).stdout)["workspace"], str(ws))
 
     def test_status_self_check_keeps_the_bridge(self) -> None:
         main_ws, other = self.tmp / "main", self.tmp / "other"
@@ -268,10 +268,10 @@ class HookTest(PluginTestCase):
         for w in (main_ws, other):
             Workspace.init(w).close()
         core.write_bridge(main_ws)
-        r = self.run_entry("plugin-status", "-w", str(other), cmd=SHIM)
+        r = self.run_entry("plugin-status", "-w", str(other), cmd=self.shim())
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(core.read_bridge(), str(main_ws))
-        r = self.run_entry("plugin-status", "--json", cmd=SHIM, env={"MINDSLICE_WORKSPACE": str(other)})
+        r = self.run_entry("plugin-status", "--json", cmd=self.shim(), env={"MINDSLICE_WORKSPACE": str(other)})
         self.assertEqual(json.loads(r.stdout)["workspace"], str(other))
 
 
@@ -285,7 +285,7 @@ class CliRoutingTest(PluginTestCase):
         data = os.environ.pop("CLAUDE_PLUGIN_DATA")
         project = self.tmp / "p2"
         project.mkdir()
-        r = self.run_entry("write", "t/five", "--summary", "s", "--content", "- x", "--reason", "t", cmd=SHIM,
+        r = self.run_entry("write", "t/five", "--summary", "s", "--content", "- x", "--reason", "t", cmd=self.shim(),
                            cwd=project, env={"MINDSLICE_PLUGIN_DATA": data})
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue((ws / "overlay" / "t" / "five.md").is_file())
@@ -296,7 +296,7 @@ class CliRoutingTest(PluginTestCase):
         project = self.tmp / "project"
         project.mkdir()
         r = self.run_entry("write", "t/one", "--summary", "s", "--content", "- x", "--reason", "t",
-                           cmd=SHIM, cwd=project)
+                           cmd=self.shim(), cwd=project)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue((ws / "overlay" / "t" / "one.md").is_file())
 
@@ -308,7 +308,7 @@ class CliRoutingTest(PluginTestCase):
         Workspace.init(local).close()
         sub = local / "overlay"
         r = self.run_entry("write", "t/two", "--summary", "s", "--content", "- x", "--reason", "t",
-                           cmd=SHIM, cwd=sub, env={"MINDSLICE_PLUGIN_WORKSPACE": str(plugin_ws)})
+                           cmd=self.shim(), cwd=sub, env={"MINDSLICE_PLUGIN_WORKSPACE": str(plugin_ws)})
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue((local / "overlay" / "t" / "two.md").is_file())
         self.assertFalse(plugin_ws.exists())
@@ -319,7 +319,7 @@ class CliRoutingTest(PluginTestCase):
         from mindslice import Workspace
         Workspace.init(other).close()
         r = self.run_entry("-w", str(other), "write", "t/three", "--summary", "s", "--content", "- x",
-                           "--reason", "t", cmd=SHIM)
+                           "--reason", "t", cmd=self.shim())
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue((other / "overlay" / "t" / "three.md").is_file())
         self.assertFalse((self.tmp / "plugin-ws").exists())
@@ -335,7 +335,7 @@ class CliRoutingTest(PluginTestCase):
         project = self.tmp / "p"
         project.mkdir()
         r = self.run_entry("write", "t/four", "--summary", "s", "--content", "- x", "--reason", "t",
-                           cmd=SHIM, cwd=project)
+                           cmd=self.shim(), cwd=project)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue((ws / "overlay" / "t" / "four.md").is_file())
 
@@ -352,54 +352,59 @@ class CliRoutingTest(PluginTestCase):
 
 
 class ShimTest(PluginTestCase):
-    """adapter/mindslice: ${CLAUDE_PLUGIN_ROOT}/adapter/entry.py with a fixed interpreter name (py first on Windows)."""
+    """adapter/hook-N and adapter/mcp: ${CLAUDE_PLUGIN_ROOT}/adapter/entry.py with fixed arguments and a fixed
+    interpreter name (py, python3, python)."""
 
     def fake_python(self, name: str, marker: str) -> Path:
         d = self.tmp / f"bin-{name}"
         d.mkdir()
         exe = d / name
-        exe.write_text(f'#!/bin/sh\nprintf "%s\\n" "{marker} $1"\n')
+        exe.write_text(f'#!/bin/sh\nprintf "%s\\n" "{marker} $*"\n')
         exe.chmod(0o755)
         return exe
 
-    def run_shim(self, path: str, **env: str) -> subprocess.CompletedProcess:
-        return subprocess.run(["/bin/sh", str(BIN), "x"], capture_output=True, text=True,
+    def run_shim(self, path: str, name: str = "mcp", **env: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["/bin/sh", str(PLUGIN / "adapter" / name)], capture_output=True, text=True,
                               env=dict({"PATH": path, "CLAUDE_PLUGIN_ROOT": "/plugin/root"}, **env))
 
     @unittest.skipIf(WINDOWS, "POSIX shim behaviour")
     def test_order(self) -> None:
         py3 = self.fake_python("python3", "PY3")
         py = self.fake_python("python", "PY")
+        launcher = self.fake_python("py", "LAUNCHER")
         self.assertEqual(self.run_shim(f"{py3.parent}:{py.parent}").stdout.strip(),
-                         "PY3 /plugin/root/adapter/entry.py")
-        self.assertEqual(self.run_shim(str(py.parent)).stdout.strip(), "PY /plugin/root/adapter/entry.py")
-        r = self.run_shim(str(py3.parent), CLAUDE_PLUGIN_ROOT="")
+                         "PY3 /plugin/root/adapter/entry.py mcp")
+        self.assertEqual(self.run_shim(str(py.parent), "hook-3").stdout.strip(),
+                         "PY /plugin/root/adapter/entry.py hook 3")
+        # py first (Windows: python3 is often the Store placeholder); a native py gets Claude's C:\... path as is
+        out = self.run_shim(f"{py3.parent}:{launcher.parent}", CLAUDE_PLUGIN_ROOT="C:\\Users\\me\\m").stdout.strip()
+        self.assertEqual(out, "LAUNCHER C:\\Users\\me\\m/adapter/entry.py mcp")
+        r = self.run_shim(str(self.tmp / "nowhere"))
         self.assertEqual(r.returncode, 1)
-        self.assertIn("CLAUDE_PLUGIN_ROOT is not set", r.stderr)
-
-    @unittest.skipIf(WINDOWS, "POSIX shim behaviour")
-    def test_windows_order_in_git_bash(self) -> None:
-        py3 = self.fake_python("python3", "PY3")
-        py = self.fake_python("py", "LAUNCHER")
-        out = self.run_shim(f"{py3.parent}:{py.parent}", OS="Windows_NT",
-                            CLAUDE_PLUGIN_ROOT="C:\\Users\\me\\.claude\\plugins\\cache\\m").stdout.strip()
-        # a native py gets the Windows path as Claude gave it (mixed separators are fine for Python)
-        self.assertEqual(out, "LAUNCHER C:\\Users\\me\\.claude\\plugins\\cache\\m/adapter/entry.py")
+        self.assertIn("no Python found", r.stderr)
 
     def test_launchers_are_plain(self) -> None:
-        # what the plugin directory's validator needs: literal ${CLAUDE_PLUGIN_ROOT}/<file> paths, fixed interpreter
-        # names, no command substitution, no variable commands
-        sh = BIN.read_text()
-        for bad in ("$(", "`", 'exec "$', "exec $", "eval", "dirname", "readlink"):
-            self.assertNotIn(bad, sh)
-        execs = re.findall(r"exec (\S+) (\S+)", sh)
-        self.assertEqual({e[0] for e in execs}, {"py", "python", "python3"})
-        self.assertEqual({e[1] for e in execs}, {'"${CLAUDE_PLUGIN_ROOT}/adapter/entry.py"'})
-        cmd = (BIN.parent / "mindslice.cmd").read_text()
+        # what the plugin directory's validator follows: no variable but CLAUDE_PLUGIN_ROOT, no substitution, no
+        # pattern, literal ${CLAUDE_PLUGIN_ROOT}/<file> paths, fixed interpreter names and arguments
+        import json as _json
+
+        hooks = _json.loads((PLUGIN / "hooks" / "hooks.json").read_text())["hooks"]["SessionStart"][0]["hooks"]
+        names = [f"hook-{i}" for i in range(1, len(hooks) + 1)] + ["mcp"]
+        for name in names:
+            sh = (PLUGIN / "adapter" / name).read_text()
+            code = "\n".join(line for line in sh.splitlines() if not line.startswith("#"))
+            self.assertEqual(re.findall(r"\$\{?[A-Za-z_@*#?0-9!-]", code.replace("${CLAUDE_PLUGIN_ROOT}", "")), [], name)
+            for bad in ("$(", "`", "*", "?", "[", "{", "<<", "eval"):
+                self.assertNotIn(bad, code.replace("${CLAUDE_PLUGIN_ROOT}", ""), name)
+            execs = re.findall(r"exec (\S+) (\S+)", code)
+            self.assertEqual([e[0] for e in execs], ["py", "python3", "python"], name)
+            self.assertEqual({e[1] for e in execs}, {'"${CLAUDE_PLUGIN_ROOT}/adapter/entry.py"'}, name)
+        cmd = (PLUGIN / "adapter" / "mcp.cmd").read_text()
         runs = [line for line in cmd.splitlines() if "entry.py" in line and not line.lower().startswith("rem")]
         self.assertEqual([line.split()[0] for line in runs], ["py", "python"])
-        self.assertTrue(all('"%CLAUDE_PLUGIN_ROOT%\\adapter\\entry.py" %*' in line for line in runs), runs)
+        self.assertTrue(all(line.endswith('"%CLAUDE_PLUGIN_ROOT%\\adapter\\entry.py" mcp') for line in runs), runs)
         self.assertNotIn("%~", cmd)
+        self.assertNotIn("%*", cmd)
 
 
 class WindowsLogicTest(PluginTestCase):
@@ -437,7 +442,7 @@ class IsolationTest(PluginTestCase):
         self.assertEqual(out[1]["result"]["tools"], [])
         project = self.tmp / "project"
         project.mkdir()
-        cli = self.run_entry("status", cmd=SHIM, cwd=project, env=env)
+        cli = self.run_entry("status", cmd=self.shim(), cwd=project, env=env)
         self.assertNotEqual(cli.returncode, 0)  # no fallback to the personal workspace
         self.assertFalse(ws.exists())
 

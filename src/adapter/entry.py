@@ -14,7 +14,6 @@ import subprocess
 import sys
 
 MIN_VERSION = (3, 12)
-REEXEC_FLAG = "_MINDSLICE_REEXEC"
 WINDOWS = os.name == "nt"
 SEARCH_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "~/.local/bin", "~/.pyenv/shims")
 NAMES = ("python3.14", "python3.13", "python3.12", "python3")
@@ -90,30 +89,30 @@ def _fail(message):
     sys.exit(1)
 
 
-def _relaunch(exe, env):
+def _relaunch(exe):
+    # The child inherits this environment as is (with _MINDSLICE_REEXEC set), never a copied or edited one.
     argv = [exe, os.path.abspath(__file__)] + sys.argv[1:]
     if WINDOWS:
         # os.exec* on Windows starts a new process and ends this one, so the host would see its MCP server
         # or hook exit at once. Run the child on the inherited stdio and pass its exit code on instead.
         try:
-            sys.exit(subprocess.call(argv, env=env))
+            sys.exit(subprocess.call(argv))
         except KeyboardInterrupt:
             sys.exit(130)
-    os.execve(exe, argv, env)
+    os.execv(exe, argv)
 
 
 def _bootstrap():
     if sys.version_info >= MIN_VERSION:
-        os.environ.pop(REEXEC_FLAG, None)
+        os.environ.pop("_MINDSLICE_REEXEC", None)
         return
-    if os.environ.get(REEXEC_FLAG) != "1":
+    if os.environ.get("_MINDSLICE_REEXEC") != "1":
         me = os.path.normcase(os.path.realpath(sys.executable or ""))
         for exe in _candidates():
             if os.path.normcase(os.path.realpath(exe)) == me or not _usable(exe):
                 continue
-            env = dict(os.environ)
-            env[REEXEC_FLAG] = "1"
-            _relaunch(exe, env)
+            os.environ["_MINDSLICE_REEXEC"] = "1"
+            _relaunch(exe)
     where = ("python.org installs (found with the py launcher), %LOCALAPPDATA%\\Programs\\Python and PATH are "
              "searched" if WINDOWS else
              "python3.12 on PATH, Homebrew, ~/.local/bin or pyenv are searched")

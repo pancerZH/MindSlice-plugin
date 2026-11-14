@@ -113,10 +113,8 @@ def atomic_write(path: Path, text: str) -> None:
 
 def bin_path() -> Path:
     """The CLI for the user's own terminal: the launcher the driver writes at session start (it needs no host
-    environment), else the adapter's; ``mindslice.cmd`` for cmd/PowerShell on Windows."""
-    name = "mindslice.cmd" if os.name == "nt" else "mindslice"
-    launchers = getattr(driver, "launcher_dir", None)
-    return (launchers() if launchers else PLUGIN_ROOT / "adapter") / name
+    environment); ``mindslice.cmd`` for cmd/PowerShell on Windows."""
+    return driver.launcher_dir() / ("mindslice.cmd" if os.name == "nt" else "mindslice")
 
 
 # ---------------------------------------------------------------------------
@@ -266,21 +264,21 @@ def read_bridge() -> str | None:
 
 
 def _candidates(entry: str, cli_value: str | None) -> list[tuple[str, Any]]:
-    env = os.environ.get
+    # Every variable is read by its literal name (the plugin directory holds code that reads a name chosen at run time).
     if entry == "mcp":
         return [("--workspace", lambda: cli_value), ("plugin option", driver.configured_workspace),
-                ("MINDSLICE_WORKSPACE", lambda: env("MINDSLICE_WORKSPACE"))]
+                ("MINDSLICE_WORKSPACE", lambda: os.environ.get("MINDSLICE_WORKSPACE"))]
     if entry == "hook":
         # The bridge file stands in for the plugin option where a host gives options only to the MCP server. Where
         # hooks do receive the option, an empty option means "not configured": a bridge left over from an earlier
         # install (uninstall clears options, not the data dir) must not deliver memory without the MCP tools.
         bridge = [] if getattr(driver, "options_reach_hooks", False) else [("active_workspace.json", read_bridge)]
         return [("--workspace", lambda: cli_value), ("plugin option", driver.configured_workspace), *bridge,
-                ("MINDSLICE_WORKSPACE", lambda: env("MINDSLICE_WORKSPACE"))]
+                ("MINDSLICE_WORKSPACE", lambda: os.environ.get("MINDSLICE_WORKSPACE"))]
     # cli / plugin-status: an explicit MINDSLICE_WORKSPACE wins, as it does for every upstream command (4.6 rule 2)
-    return [("--workspace", lambda: cli_value), ("MINDSLICE_WORKSPACE", lambda: env("MINDSLICE_WORKSPACE")),
+    return [("--workspace", lambda: cli_value), ("MINDSLICE_WORKSPACE", lambda: os.environ.get("MINDSLICE_WORKSPACE")),
             ("plugin option", driver.configured_workspace),
-            ("MINDSLICE_PLUGIN_WORKSPACE", lambda: env("MINDSLICE_PLUGIN_WORKSPACE")),
+            ("MINDSLICE_PLUGIN_WORKSPACE", lambda: os.environ.get("MINDSLICE_PLUGIN_WORKSPACE")),
             ("active_workspace.json", read_bridge)]
 
 
@@ -812,14 +810,16 @@ class IsolatedMCPServer(MCPServer):
 def run_mcp(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="mindslice-plugin mcp")
     parser.add_argument("--workspace", "-w", default=None)
+    # plugin-status's handshake: check the real server even when isolated, and do not repoint hooks and CLI
+    parser.add_argument("--selftest", action="store_true", help=argparse.SUPPRESS)
     ns = parser.parse_args(list(argv))
     ensure_utf8_stdio()
-    if isolated():
+    if isolated() and not ns.selftest:
         IsolatedMCPServer().serve(sys.stdin, sys.stdout)
         return 0
     try:
         path = ensure_workspace(resolve("mcp", ns.workspace))
-        if os.environ.get(SELFTEST_FLAG) != "1":  # plugin-status's handshake must not repoint hooks and CLI
+        if not ns.selftest:
             write_bridge(path)
         with Workspace(path) as ws:
             PluginMCPServer(ws, driver.stage_writes_enabled()).serve(sys.stdin, sys.stdout)
@@ -835,13 +835,8 @@ def run_mcp(argv: Sequence[str]) -> int:
 # ---------------------------------------------------------------------------
 # plugin-status
 # ---------------------------------------------------------------------------
-SELFTEST_FLAG = "_MINDSLICE_PLUGIN_SELFTEST"
-
-
 def mcp_handshake(path: Path, timeout: float = 30.0) -> dict[str, Any]:
     """Start this plugin's own ``mcp`` entry point and check it answers with the four tools and short instructions."""
-    env = {k: v for k, v in os.environ.items() if k != "MINDSLICE_PLUGIN_ISOLATE"}
-    env[SELFTEST_FLAG] = "1"
     requests = [
         {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
             "protocolVersion": PROTOCOL_VERSIONS[0], "capabilities": {},
@@ -851,8 +846,10 @@ def mcp_handshake(path: Path, timeout: float = 30.0) -> dict[str, Any]:
     ]
     stdin = "".join(json.dumps(r) + "\n" for r in requests)
     try:
-        proc = subprocess.run([sys.executable, str(ADAPTER_DIR / "entry.py"), "mcp", "--workspace", str(path)],
-                              input=stdin, capture_output=True, text=True, encoding="utf-8", timeout=timeout, env=env)
+        # the environment is inherited as is, not copied or edited: the options travel as arguments
+        proc = subprocess.run([sys.executable, str(ADAPTER_DIR / "entry.py"), "mcp", "--selftest", "--workspace",
+                               str(path)], input=stdin, capture_output=True, text=True, encoding="utf-8",
+                              timeout=timeout)
     except (OSError, subprocess.SubprocessError) as exc:
         return {"ok": False, "problem": f"could not start the MCP entry point: {exc}"}
     responses = {}

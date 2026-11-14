@@ -6,22 +6,22 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/adapter/mindslice\" hook 1",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/adapter/hook-1\"",
             "timeout": 30
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/adapter/mindslice\" hook 2",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/adapter/hook-2\"",
             "timeout": 30
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/adapter/mindslice\" hook 3",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/adapter/hook-3\"",
             "timeout": 30
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/adapter/mindslice\" hook 4",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/adapter/hook-4\"",
             "timeout": 30
           }
         ]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -91,19 +92,19 @@ class OutputTest(unittest.TestCase):
         self.assertFalse(any(f.startswith("engine/") or "/mindslice/" in f for f in files), "engine is not shipped")
         total = sum((PLUGIN / f).stat().st_size for f in files if not f.lower().endswith(build.IMAGE_SUFFIXES))
         self.assertLessEqual(total, build.MAX_TARGET_BYTES)
-        for f in ("adapter/entry.py", "adapter/core.py", "adapter/driver.py", "adapter/provision.py", "adapter/mindslice", "hooks/hooks.json",
+        for f in ("adapter/entry.py", "adapter/core.py", "adapter/driver.py", "adapter/provision.py", "adapter/mcp", "adapter/mcp.cmd", "hooks/hooks.json",
                   ".claude-plugin/plugin.json", "LICENSE", "NOTICE", "skills/setup/SKILL.md", "skills/review/SKILL.md"):
             self.assertIn(f, files)
         if os.name != "nt":
-            self.assertTrue(os.access(PLUGIN / "adapter" / "mindslice", os.X_OK))
-        self.assertIn("adapter/mindslice.cmd", files)
+            self.assertTrue(os.access(PLUGIN / "adapter" / "mcp", os.X_OK))  # Claude runs it directly
         self.assertFalse(any(f.startswith("bin/") for f in files), "a top-level bin/ makes Chat and Cowork refuse the plugin")
-        cmd = (PLUGIN / "adapter" / "mindslice.cmd").read_bytes()
-        self.assertNotIn(b"\n", cmd.replace(b"\r\n", b""), "mindslice.cmd must be CRLF")
+        cmd = (PLUGIN / "adapter" / "mcp.cmd").read_bytes()
+        self.assertNotIn(b"\n", cmd.replace(b"\r\n", b""), "mcp.cmd must be CRLF")
         lines = [line.strip().lower() for line in cmd.decode("ascii").splitlines() if line.strip()]
         self.assertEqual(lines[-1], "exit /b %errorlevel%", "the exit code must be passed on explicitly")
         self.assertNotIn("exit /b", lines[:-1])
-        self.assertNotIn(b"\r", (PLUGIN / "adapter" / "mindslice").read_bytes(), "the sh shim must be LF")
+        for f in [f for f in files if f.startswith("adapter/hook-")] + ["adapter/mcp"]:
+            self.assertNotIn(b"\r", (PLUGIN / f).read_bytes(), f"{f} must be LF")
 
     def test_build_info_matches(self) -> None:
         info = json.loads((PLUGIN / ".build-info.json").read_text())
@@ -115,13 +116,13 @@ class OutputTest(unittest.TestCase):
     def test_launch_commands(self) -> None:
         manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())
         mcp = manifest["mcpServers"]["mindslice"]
-        self.assertEqual(mcp["command"], "${CLAUDE_PLUGIN_ROOT}/adapter/mindslice")
-        self.assertEqual(mcp["args"], ["mcp"])
+        self.assertEqual(mcp["command"], "${CLAUDE_PLUGIN_ROOT}/adapter/mcp")
+        self.assertNotIn("args", mcp)
         self.assertEqual(mcp["env"]["MINDSLICE_PLUGIN_OPTION_WORKSPACE"], "${user_config.workspace}")
         self.assertNotIn("python", manifest["userConfig"])
         hooks = json.loads((PLUGIN / "hooks" / "hooks.json").read_text())["hooks"]["SessionStart"][0]["hooks"]
         for i, h in enumerate(hooks, 1):
-            self.assertEqual(h["command"], f'sh "${{CLAUDE_PLUGIN_ROOT}}/adapter/mindslice" hook {i}')
+            self.assertEqual(h["command"], f'sh "${{CLAUDE_PLUGIN_ROOT}}/adapter/hook-{i}"')
 
     def test_manifest_version(self) -> None:
         manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())
@@ -154,6 +155,16 @@ class OutputTest(unittest.TestCase):
 
 
 class DirectoryRulesTest(unittest.TestCase):
+    def test_environment_read_by_literal_name_only(self) -> None:
+        # the directory holds code that reads an environment variable named at run time, or hands a copied
+        # environment to a command, as a possible credential leaving the machine (MCP_FORWARDS_CREDENTIAL_ENV)
+        for f in sorted((PLUGIN / "adapter").glob("*.py")):
+            code = f.read_text(encoding="utf-8")
+            for m in re.finditer(r"os\.environ|getenv", code):
+                rest = code[m.end():m.end() + 6]
+                self.assertTrue(rest.startswith(('.get("', '["', '.pop("')), f"{f.name}: {code[m.start():m.end() + 30]!r}")
+            self.assertNotIn("env=", re.sub(r"#.*", "", code), f"{f.name} passes an explicit environment to a process")
+
     """What claude.ai/directory checks before it can validate the repository at all."""
 
     def test_no_content_changing_git_attributes(self) -> None:

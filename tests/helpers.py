@@ -15,10 +15,7 @@ REPO = Path(__file__).resolve().parent.parent
 TARGET = os.environ.get("MINDSLICE_PLUGIN_TARGET", "claude")
 PLUGIN = REPO / "plugins" / TARGET
 ENTRY = PLUGIN / "adapter" / "entry.py"
-BIN = PLUGIN / "adapter" / "mindslice"  # the sh launcher (hooks.json runs it; the Bash tool reaches it via PATH)
 WINDOWS = os.name == "nt"
-# How a user's terminal runs the plugin CLI: the sh shim, or mindslice.cmd from cmd/PowerShell on Windows.
-SHIM = [str(PLUGIN / "adapter" / "mindslice.cmd")] if WINDOWS else [str(BIN)]
 
 if str(PLUGIN / "adapter") not in sys.path:
     sys.path.insert(0, str(PLUGIN / "adapter"))
@@ -73,6 +70,14 @@ class PluginTestCase(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self._env)
         self._tmp.cleanup()
+
+    def shim(self) -> list[str]:
+        """How the Bash tool and a user's terminal run the plugin CLI: the launcher slot 1 writes to
+        <plugin data>/bin (mindslice.cmd from cmd/PowerShell on Windows)."""
+        import driver
+
+        d = driver.write_launchers()
+        return [str(d / ("mindslice.cmd" if WINDOWS else "mindslice"))]
 
     def configure(self, workspace: Path | str | None) -> None:
         if workspace is None:

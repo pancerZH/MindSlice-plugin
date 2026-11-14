@@ -45,7 +45,7 @@ sys.path.insert(0, str(SRC / "common"))
 import rules  # noqa: E402
 
 # Top-level paths a plugin directory may contain (anything else is a build bug).
-# No top-level bin/: Chat and Cowork refuse to install a plugin that has one (the launcher lives in adapter/).
+# No top-level bin/: Chat and Cowork refuse to install a plugin that has one (the launchers live in adapter/).
 OUTPUT_ALLOWED = (".claude-plugin/", ".build-info.json", "README.md", "LICENSE", "NOTICE", "hooks/",
                   "adapter/", "skills/")
 LINK_RE = re.compile(r"\]\(([^)\s]+)\)")
@@ -353,13 +353,16 @@ def build_target(name: str, up: Upstream, lock: dict[str, str]) -> Build:
         "description": "MindSlice: deliver the standing memory at session start, resume, clear and compaction "
                        "(one page per command, all from one snapshot).",
         "hooks": {cfg["hook_event"]: [{"hooks": hooks}]}}))
-    out.add("adapter/mindslice", (tdir / "launcher" / "mindslice").read_bytes(), executable=True)
-    cmd_shim = tdir / "launcher" / "mindslice.cmd"
-    if cmd_shim.is_file():
-        data = cmd_shim.read_bytes()
-        if b"\n" in data.replace(b"\r\n", b""):
-            raise BuildError(f"{cmd_shim} must use CRLF line endings (cmd.exe labels break otherwise)")
-        out.add("adapter/mindslice.cmd", data)
+    # One plain launcher per command, arguments spelled out: the plugin directory follows a command's script only
+    # when it uses no variable but CLAUDE_PLUGIN_ROOT (so no "$@", no $OS).
+    sh_tpl = (tdir / "launcher" / "run.sh").read_text(encoding="utf-8")
+    for i in range(1, cfg["hook_slots"] + 1):
+        out.add(f"adapter/hook-{i}", sh_tpl.replace("@ARGS@", f"hook {i}").encode())
+    out.add("adapter/mcp", sh_tpl.replace("@ARGS@", "mcp").encode(), executable=True)  # run directly by Claude
+    cmd_tpl = (tdir / "launcher" / "run.cmd").read_bytes()
+    if b"\n" in cmd_tpl.replace(b"\r\n", b""):
+        raise BuildError(f"{tdir / 'launcher' / 'run.cmd'} must use CRLF line endings (cmd.exe labels break otherwise)")
+    out.add("adapter/mcp.cmd", cmd_tpl.replace(b"@ARGS@", b"mcp"))
     out.add("README.md", (tdir / "README.md").read_bytes())
     icon = tdir / "icon.png"
     if icon.is_file():  # found by the directory and `claude plugin validate` at .claude-plugin/icon.png
