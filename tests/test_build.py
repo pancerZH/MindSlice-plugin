@@ -99,6 +99,9 @@ class OutputTest(unittest.TestCase):
         self.assertIn("bin/mindslice.cmd", files)
         cmd = (PLUGIN / "bin" / "mindslice.cmd").read_bytes()
         self.assertNotIn(b"\n", cmd.replace(b"\r\n", b""), "mindslice.cmd must be CRLF")
+        lines = [line.strip().lower() for line in cmd.decode("ascii").splitlines() if line.strip()]
+        self.assertEqual(lines[-1], "exit /b %errorlevel%", "the exit code must be passed on explicitly")
+        self.assertNotIn("exit /b", lines[:-1])
         self.assertNotIn(b"\r", (PLUGIN / "bin" / "mindslice").read_bytes(), "the sh shim must be LF")
 
     def test_build_info_matches(self) -> None:
