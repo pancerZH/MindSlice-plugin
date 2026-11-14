@@ -100,9 +100,6 @@ class OutputTest(unittest.TestCase):
         self.assertFalse(any(f.startswith("bin/") for f in files), "a top-level bin/ makes Chat and Cowork refuse the plugin")
         cmd = (PLUGIN / "adapter" / "mcp.cmd").read_bytes()
         self.assertNotIn(b"\n", cmd.replace(b"\r\n", b""), "mcp.cmd must be CRLF")
-        lines = [line.strip().lower() for line in cmd.decode("ascii").splitlines() if line.strip()]
-        self.assertEqual(lines[-1], "exit /b %errorlevel%", "the exit code must be passed on explicitly")
-        self.assertNotIn("exit /b", lines[:-1])
         for f in [f for f in files if f.startswith("adapter/hook-")] + ["adapter/mcp"]:
             self.assertNotIn(b"\r", (PLUGIN / f).read_bytes(), f"{f} must be LF")
 

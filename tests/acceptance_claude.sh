@@ -67,6 +67,14 @@ result() { "$PY" -c 'import json,sys
 for l in open(sys.argv[1], encoding="utf-8"):
     m=json.loads(l)
     if m.get("type")=="result": print(m.get("result") or "")' "$1"; }
+# Every text block the model wrote: a multi-part answer can be spread over several messages, and the final
+# "result" then holds only the last part.
+said() { "$PY" -c 'import json,sys
+for l in open(sys.argv[1], encoding="utf-8"):
+    m=json.loads(l)
+    if m.get("type")=="assistant":
+        for b in m.get("message",{}).get("content",[]):
+            if b.get("type")=="text": print(b.get("text",""))' "$1"; }
 session() { "$PY" -c 'import json,sys
 for l in open(sys.argv[1], encoding="utf-8"):
     m=json.loads(l)
@@ -141,7 +149,7 @@ if [ "${INSTALLED:-0}" = 1 ]; then
 for l in open(sys.argv[1], encoding="utf-8"):
     m=json.loads(l)
     if m.get("subtype")=="init": print(" ".join(s["name"]+"="+s["status"] for s in m["mcp_servers"] if "mindslice" in s["name"]))' "$WORK/6a.jsonl")"
-    out6="$(result "$WORK/6a.jsonl")"
+    out6="$(said "$WORK/6a.jsonl")"
     if grep -q "connected" <<<"$mcp"; then pass "6 MCP server connected"; else bad "6 MCP server: ${mcp:-absent}"; fi
     if grep -q "HERON-6620" <<<"$out6" && grep -q "Bartholomew" <<<"$out6"; then pass "6 startup pages and search tool"; else bad "6 phrase/search: $out6"; fi
     if grep -q "plugins[/\\]data" <<<"$out6" && ! grep -q "cache.mindslice-plugin" <<<"$out6"; then pass "6 Bash tool uses the plugin data dir"; else bad "6 engine path: $out6"; fi

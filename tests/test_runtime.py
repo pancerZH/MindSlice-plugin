@@ -381,7 +381,7 @@ class ShimTest(PluginTestCase):
         self.assertEqual(out, "LAUNCHER C:\\Users\\me\\m/adapter/entry.py mcp")
         r = self.run_shim(str(self.tmp / "nowhere"))
         self.assertEqual(r.returncode, 1)
-        self.assertIn("no Python found", r.stderr)
+        self.assertIn("Python 3.12 or newer is required", r.stderr)
 
     def test_launchers_are_plain(self) -> None:
         # what the plugin directory's validator follows: no variable but CLAUDE_PLUGIN_ROOT, no substitution, no
@@ -392,9 +392,10 @@ class ShimTest(PluginTestCase):
         names = [f"hook-{i}" for i in range(1, len(hooks) + 1)] + ["mcp"]
         for name in names:
             sh = (PLUGIN / "adapter" / name).read_text()
-            code = "\n".join(line for line in sh.splitlines() if not line.startswith("#"))
+            self.assertEqual([line for line in sh.splitlines() if line.startswith("#")], ["#!/bin/sh"], name)
+            code = "\n".join(sh.splitlines()[1:])
             self.assertEqual(re.findall(r"\$\{?[A-Za-z_@*#?0-9!-]", code.replace("${CLAUDE_PLUGIN_ROOT}", "")), [], name)
-            for bad in ("$(", "`", "*", "?", "[", "{", "<<", "eval"):
+            for bad in ("$(", "`", "*", "?", "[", "{", "<<", "eval", "/dev/", "install", ";\n"):
                 self.assertNotIn(bad, code.replace("${CLAUDE_PLUGIN_ROOT}", ""), name)
             execs = re.findall(r"exec (\S+) (\S+)", code)
             self.assertEqual([e[0] for e in execs], ["py", "python3", "python"], name)
@@ -403,8 +404,10 @@ class ShimTest(PluginTestCase):
         runs = [line for line in cmd.splitlines() if "entry.py" in line and not line.lower().startswith("rem")]
         self.assertEqual([line.split()[0] for line in runs], ["py", "python"])
         self.assertTrue(all(line.endswith('"%CLAUDE_PLUGIN_ROOT%\\adapter\\entry.py" mcp') for line in runs), runs)
-        self.assertNotIn("%~", cmd)
-        self.assertNotIn("%*", cmd)
+        # no %NAME% but CLAUDE_PLUGIN_ROOT, no path outside the plugin (nul), no comments
+        self.assertEqual(re.findall(r"%[^%\s]*%?", cmd.replace("%CLAUDE_PLUGIN_ROOT%", "")), [])
+        self.assertNotIn("nul", cmd.lower())
+        self.assertFalse([line for line in cmd.splitlines() if line.lower().startswith(("rem", "::"))])
 
 
 class WindowsLogicTest(PluginTestCase):

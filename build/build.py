@@ -355,13 +355,15 @@ def build_target(name: str, up: Upstream, lock: dict[str, str]) -> Build:
         "hooks": {cfg["hook_event"]: [{"hooks": hooks}]}}))
     # One plain launcher per command, arguments spelled out: the plugin directory follows a command's script only
     # when it uses no variable but CLAUDE_PLUGIN_ROOT (so no "$@", no $OS).
-    sh_tpl = (tdir / "launcher" / "run.sh").read_text(encoding="utf-8")
+    sh_tpl = "".join(line for line in (tdir / "launcher" / "run.sh").read_text(encoding="utf-8").splitlines(True)
+                     if not line.startswith("##"))
     for i in range(1, cfg["hook_slots"] + 1):
         out.add(f"adapter/hook-{i}", sh_tpl.replace("@ARGS@", f"hook {i}").encode())
     out.add("adapter/mcp", sh_tpl.replace("@ARGS@", "mcp").encode(), executable=True)  # run directly by Claude
     cmd_tpl = (tdir / "launcher" / "run.cmd").read_bytes()
     if b"\n" in cmd_tpl.replace(b"\r\n", b""):
         raise BuildError(f"{tdir / 'launcher' / 'run.cmd'} must use CRLF line endings (cmd.exe labels break otherwise)")
+    cmd_tpl = b"".join(line for line in cmd_tpl.splitlines(True) if not line.startswith(b"::"))
     out.add("adapter/mcp.cmd", cmd_tpl.replace(b"@ARGS@", b"mcp"))
     out.add("README.md", (tdir / "README.md").read_bytes())
     icon = tdir / "icon.png"
