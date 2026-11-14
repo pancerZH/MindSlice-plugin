@@ -32,6 +32,23 @@ class HookTest(PluginTestCase):
         self.assertIn("no memory workspace configured", r.stdout)
         self.assertEqual(self.hook(2).stdout, "")
 
+    def test_leftover_bridge_does_not_count_as_configured(self) -> None:
+        # uninstall clears the options but not the data dir: hooks must report "not configured", not old memory
+        old = self.tmp / "old-ws"
+        from mindslice import Workspace
+        Workspace.init(old).close()
+        core.write_bridge(old)
+        r = self.hook(1)
+        self.assertIn("no memory workspace configured", r.stdout)
+        # a host whose hooks never see the options still uses the bridge
+        from unittest import mock
+
+        import driver
+        with mock.patch.object(driver, "options_reach_hooks", False):
+            self.assertEqual(core.resolve("hook").path, old)
+        # the CLI keeps it as its last fallback (the user's own terminal has nothing else)
+        self.assertEqual(core.resolve("cli").path, old)
+
     def test_missing_and_empty_are_initialized(self) -> None:
         for path in (self.tmp / "new" / "ws", self.tmp / "empty"):
             if path.name == "empty":
@@ -79,6 +96,7 @@ class HookTest(PluginTestCase):
         self.assertEqual(text, driver.env_lines(ws))
         self.assertEqual(text.count("export MINDSLICE_PLUGIN_WORKSPACE="), 1)
         self.assertIn("export MINDSLICE_PLUGIN_PYTHON=", text)
+        self.assertIn("export MINDSLICE_PLUGIN_DATA=", text)
         self.assertNotIn("\\", text.splitlines()[1])  # forward slashes for Git Bash
 
     @unittest.skipUnless(shutil.which("sh"), "no sh")
@@ -142,6 +160,20 @@ class HookTest(PluginTestCase):
 
 
 class CliRoutingTest(PluginTestCase):
+    def test_bash_tool_uses_the_exported_data_dir(self) -> None:
+        # the Bash tool has no CLAUDE_PLUGIN_DATA, only what slot 1 exported
+        ws = self.tmp / "ws"
+        from mindslice import Workspace
+        Workspace.init(ws).close()
+        core.write_bridge(ws)  # into CLAUDE_PLUGIN_DATA (the test's data dir)
+        data = os.environ.pop("CLAUDE_PLUGIN_DATA")
+        project = self.tmp / "p2"
+        project.mkdir()
+        r = self.run_entry("write", "t/five", "--summary", "s", "--content", "- x", "--reason", "t", cmd=SHIM,
+                           cwd=project, env={"MINDSLICE_PLUGIN_DATA": data})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue((ws / "overlay" / "t" / "five.md").is_file())
+
     def test_plugin_workspace_used_outside_workspaces(self) -> None:
         ws = self.tmp / "plugin-ws"
         self.configure(ws)

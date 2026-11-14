@@ -242,8 +242,12 @@ def _candidates(entry: str, cli_value: str | None) -> list[tuple[str, Any]]:
         return [("--workspace", lambda: cli_value), ("plugin option", driver.configured_workspace),
                 ("MINDSLICE_WORKSPACE", lambda: env("MINDSLICE_WORKSPACE"))]
     if entry == "hook":
-        return [("--workspace", lambda: cli_value), ("plugin option", driver.configured_workspace),
-                ("active_workspace.json", read_bridge), ("MINDSLICE_WORKSPACE", lambda: env("MINDSLICE_WORKSPACE"))]
+        # The bridge file stands in for the plugin option where a host gives options only to the MCP server. Where
+        # hooks do receive the option, an empty option means "not configured": a bridge left over from an earlier
+        # install (uninstall clears options, not the data dir) must not deliver memory without the MCP tools.
+        bridge = [] if getattr(driver, "options_reach_hooks", False) else [("active_workspace.json", read_bridge)]
+        return [("--workspace", lambda: cli_value), ("plugin option", driver.configured_workspace), *bridge,
+                ("MINDSLICE_WORKSPACE", lambda: env("MINDSLICE_WORKSPACE"))]
     # cli / plugin-status: an explicit MINDSLICE_WORKSPACE wins, as it does for every upstream command (4.6 rule 2)
     return [("--workspace", lambda: cli_value), ("MINDSLICE_WORKSPACE", lambda: env("MINDSLICE_WORKSPACE")),
             ("plugin option", driver.configured_workspace),

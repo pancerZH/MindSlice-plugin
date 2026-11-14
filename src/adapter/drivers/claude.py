@@ -5,7 +5,7 @@ Hooks: ``hooks/hooks.json`` runs ``sh bin/mindslice hook <slot>`` for slots 1..K
 hooks need no configuration. Claude runs them in parallel (``sh -c`` on macOS/Linux, Git Bash on Windows) and
 adds each one's plain-text stdout to the context (up to 10,000 characters each), so slot ``i`` prints page ``i``
 of one shared snapshot. Slot 1 also exports ``MINDSLICE_PLUGIN_WORKSPACE`` and ``MINDSLICE_PLUGIN_PYTHON`` (the
-verified interpreter) through ``$CLAUDE_ENV_FILE`` for the Bash tool.
+verified interpreter) and ``MINDSLICE_PLUGIN_DATA`` through ``$CLAUDE_ENV_FILE`` for the Bash tool.
 
 The MCP server is started directly by Claude with the ``python`` plugin option (default ``python3``): on Windows,
 where ``python3`` is usually missing or the Microsoft Store placeholder, the user sets it to ``py``.
@@ -23,6 +23,7 @@ from pathlib import Path
 
 NAME = "claude"
 reinjects_on_compact = True  # SessionStart fires again with source "compact"
+options_reach_hooks = True  # user-set options arrive as $CLAUDE_PLUGIN_OPTION_<KEY> (only defaults do not)
 REVIEW_COMMAND = "/mindslice:review"
 CLI_HINT = ("The `mindslice` CLI is on the Bash tool's PATH and uses this workspace by default (pass -w for "
             "another one); management commands (status, diff, apply, discard, mount, bake, doctor) are CLI-only. "
@@ -35,7 +36,9 @@ def _env(name: str) -> str | None:
 
 
 def plugin_data_dir() -> Path:
-    data = _env("CLAUDE_PLUGIN_DATA")
+    # Claude sets CLAUDE_PLUGIN_DATA for hooks and the MCP server, not for the Bash tool: there the CLI uses the
+    # MINDSLICE_PLUGIN_DATA that slot 1 exported, so it shares the engine copy and the bridge file.
+    data = _env("CLAUDE_PLUGIN_DATA") or _env("MINDSLICE_PLUGIN_DATA")
     return Path(data) if data else Path.home() / ".cache" / "mindslice-plugin" / NAME
 
 
@@ -64,8 +67,12 @@ def env_lines(workspace: Path) -> str:
     """What slot 1 adds to ``$CLAUDE_ENV_FILE``: plain ``export NAME='value'`` lines (forward slashes, so Git Bash
     on Windows can run the interpreter path as is)."""
     python = Path(sys.executable).as_posix()
-    return (f"export MINDSLICE_PLUGIN_WORKSPACE={shlex.quote(str(workspace))}\n"
-            f"export MINDSLICE_PLUGIN_PYTHON={shlex.quote(python)}\n")
+    lines = (f"export MINDSLICE_PLUGIN_WORKSPACE={shlex.quote(str(workspace))}\n"
+             f"export MINDSLICE_PLUGIN_PYTHON={shlex.quote(python)}\n")
+    data = _env("CLAUDE_PLUGIN_DATA")
+    if data:  # namespaced: the Bash tool's environment is shared by every plugin
+        lines += f"export MINDSLICE_PLUGIN_DATA={shlex.quote(Path(data).as_posix())}\n"
+    return lines
 
 
 def _export_env(workspace: Path) -> None:
