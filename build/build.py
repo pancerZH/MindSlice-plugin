@@ -38,7 +38,7 @@ LOCK = REPO / "build" / "upstream.lock"
 TARGETS = ("claude", "antigravity")
 CACHE = REPO / "build" / ".cache"
 MAX_TARGET_BYTES = 256_000  # everything but images (the directory limits images separately)
-IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg")
+IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".svg", ".webp")
 ICON_MAX_BYTES = 2_000_000
 
 sys.path.insert(0, str(SRC / "common"))
@@ -386,8 +386,10 @@ def antigravity_files(out: Build, tdir: Path, cfg: dict, manifest: dict) -> None
     out.add("README.md", (tdir / "README.md").read_bytes())
     logo = manifest.get("logo")
     if logo:
-        data = (tdir / "logo.png").read_bytes()
-        check_icon(data, tdir / "logo.png")
+        logo_src = tdir / Path(logo).name
+        data = logo_src.read_bytes()
+        if logo_src.suffix.lower() == ".png":
+            check_icon(data, logo_src)
         out.add(logo, data)
 
 

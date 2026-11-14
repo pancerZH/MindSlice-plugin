@@ -8,13 +8,17 @@ while [ -L "$self" ]; do
   link=$(readlink "$self")
   case $link in
     /*) self=$link ;;
-    *) self=$(dirname "$self")/$link ;;
+    *) self=$(dirname -- "$self")/$link ;;
   esac
 done
 here=$(CDPATH= cd -- "$(dirname -- "$self")" && pwd)
-for py in python3 python; do
+entry="$here/@ENTRY@"
+if [ "${OS:-}" = "Windows_NT" ] && command -v cygpath >/dev/null 2>&1; then
+  entry=$(cygpath -m "$entry")
+fi
+for py in py python3 python; do
   if command -v "$py" >/dev/null 2>&1; then
-    exec "$py" "$here/@ENTRY@" @ARGS@
+    exec "$py" "$entry" @ARGS@
   fi
 done
 echo "mindslice plugin: Python 3.12 or newer is required" >&2

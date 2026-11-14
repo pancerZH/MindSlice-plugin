@@ -3,7 +3,7 @@
     "SessionStart": [
       {
         "type": "command",
-        "command": "python3 adapter/hook.py || py adapter/hook.py",
+        "command": "py adapter/hook.py || python3 adapter/hook.py || python adapter/hook.py",
         "timeout": 60
       }
     ]

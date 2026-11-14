@@ -65,7 +65,7 @@ class LayoutTest(unittest.TestCase):
         hooks = load("hooks.json")
         self.assertEqual(list(hooks), ["mindslice"])
         (handler,) = hooks["mindslice"]["SessionStart"]  # flat list of handlers for SessionStart
-        self.assertEqual(handler["command"], "python3 adapter/hook.py || py adapter/hook.py")
+        self.assertEqual(handler["command"], "py adapter/hook.py || python3 adapter/hook.py || python adapter/hook.py")
         self.assertNotIn("PLUGIN_ROOT", handler["command"])  # hooks run in the plugin folder
         self.assertGreater(handler["timeout"], 30)
 
@@ -101,14 +101,13 @@ class LayoutTest(unittest.TestCase):
 @only("antigravity")
 class HookTest(PluginTestCase):
     def test_hook_command_as_agy_runs_it(self) -> None:
-        # exactly what hooks.json runs, through the shell, in the plugin folder
-        if WINDOWS:
-            self.skipTest("cmd /c")
+        # exactly what hooks.json runs, through the shell (sh -c on Unix, cmd /c on Windows), in the plugin folder
         ws = self.tmp / "ws"
         self.configure(ws)
         command = load("hooks.json")["mindslice"]["SessionStart"][0]["command"]
-        r = subprocess.run(["sh", "-c", command], cwd=PLUGIN, input=json.dumps({"conversationId": "c1"}),
-                           capture_output=True, text=True, timeout=120)
+        shell = ["cmd", "/c", command] if WINDOWS else ["sh", "-c", command]
+        r = subprocess.run(shell, cwd=PLUGIN, input=json.dumps({"conversationId": "c1"}),
+                           capture_output=True, text=True, encoding="utf-8", timeout=120)
         self.assertEqual(r.returncode, 0, r.stderr)
         out = json.loads(r.stdout)
         page = out["injectSteps"][0]["systemMessage"]["systemMessage"]
@@ -160,7 +159,40 @@ class HookTest(PluginTestCase):
         r = self.hook(1, session="none")
         self.assertGreaterEqual(time.monotonic() - start, 4.5)
         self.assertIn("no memory workspace configured", r.stdout)
+        self.assertIn("include_always=true", r.stdout)  # recovery hint when MCP starts slower than the hook
         self.assertEqual(len(r.pages), 1)
+
+    def test_unconfigured_mcp_clears_leftover_bridge(self) -> None:
+        # uninstall clears config.json but leaves plugin_data: an unconfigured MCP start must drop the old bridge
+        old = self.tmp / "old"
+        Workspace.init(old).close()
+        write_always(old, "prefs/p", "- OLD-PHRASE-2")
+        core.write_bridge(old)
+        mcp = self.run_entry("mcp", stdin="", env={"MINDSLICE_PLUGIN_OPTION_WORKSPACE": "${workspace}"})
+        self.assertEqual(mcp.returncode, 1)
+        self.assertIsNone(core.read_bridge())
+        self.assertFalse(core.bridge_path().exists())
+
+    def test_relative_and_plugin_dir_workspaces_refused(self) -> None:
+        # MCP runs with cwd=PLUGIN_ROOT: a relative path or a path inside the plugin folder would put memory where
+        # plugin updates wipe it
+        old = self.tmp / "old"
+        Workspace.init(old).close()
+        core.write_bridge(old)
+        plugin_before = snapshot_files(PLUGIN)
+        for bad, expected in (("mindslice-rel", "relative path"),
+                              ("$HOME/mindslice", "unexpanded shell variable"),
+                              (str(PLUGIN / "my-memory"), "inside the plugin installation folder"),
+                              (str(core.plugin_data_dir() / "my-memory"), "internal data folder")):
+            mcp = self.run_entry("mcp", stdin="", cwd=PLUGIN, env={"MINDSLICE_PLUGIN_OPTION_WORKSPACE": bad})
+            self.assertEqual(mcp.returncode, 1, bad)
+            self.assertIn(expected, mcp.stderr, bad)
+            self.assertIsNone(core.read_bridge(), bad)
+            start = time.monotonic()
+            r = self.hook(1, session="bad")
+            self.assertLess(time.monotonic() - start, 3.0)  # invalid bridge error stops _await_bridge immediately
+            self.assertIn(expected, r.stdout, bad)
+        self.assertEqual(snapshot_files(PLUGIN), plugin_before)
 
     def test_refused_setting_replaces_an_older_bridge(self) -> None:
         # the user points the setting at a folder with other files: the MCP server refuses it and exits, and the
@@ -194,6 +226,16 @@ class HookTest(PluginTestCase):
         self.assertEqual(len(r.pages), 1)
         self.assertIn("[MindSlice plugin could not start]", r.stdout)
 
+    def test_stderr_only_crash_becomes_a_system_message(self) -> None:
+        # an unhandled crash (empty stdout, traceback on stderr, non-zero exit) is still surfaced to the model
+        os.environ.pop("PLUGIN_DATA", None)
+        r = self.hook(1, env={"HOME": "", "USERPROFILE": "", "ANTIGRAVITY_APP_DATA_DIR": "",
+                              "MINDSLICE_PLUGIN_DATA": ""})
+        self.assertEqual(r.returncode, 0)
+        self.assertEqual(len(r.pages), 1)
+        self.assertIn("[MindSlice plugin could not start]", r.stdout)
+        self.assertIn("no plugin data directory", r.stdout)
+
 
 @only("antigravity")
 class ManifestTest(PluginTestCase):
@@ -225,6 +267,14 @@ class ManifestTest(PluginTestCase):
         for value, expected in (("true", True), ("TRUE", True), ("false", False), ("", False), ("${stage_writes}", False)):
             os.environ["MINDSLICE_PLUGIN_STAGE_WRITES"] = value
             self.assertEqual(driver.stage_writes_enabled(), expected, value)
+            self.assertEqual(driver.startup_notes(), [])
+        # a typo fails closed (stages writes) and records a startup warning until corrected
+        os.environ["MINDSLICE_PLUGIN_STAGE_WRITES"] = "ture"
+        self.assertTrue(driver.stage_writes_enabled())
+        self.assertTrue(any("ture" in n for n in driver.startup_notes()))
+        os.environ["MINDSLICE_PLUGIN_STAGE_WRITES"] = "false"
+        self.assertFalse(driver.stage_writes_enabled())
+        self.assertEqual(driver.startup_notes(), [])
 
 
 @only("antigravity")
@@ -260,6 +310,24 @@ class DataDirTest(PluginTestCase):
             os.utime(d / "active_workspace.json", (stamp, stamp))
         self.assertEqual(driver.plugin_data_dir(), newer)
 
+    def test_workspace_plugin_and_mindslice_fallback_data_dir(self) -> None:
+        import driver
+
+        del os.environ["PLUGIN_DATA"]
+        home = self.tmp / "home"
+        app = self.tmp / "app"
+        os.environ["USERPROFILE" if WINDOWS else "HOME"] = str(home)
+        os.environ["ANTIGRAVITY_APP_DATA_DIR"] = str(app)
+        # workspace plugin (.agents/plugins/...): MCP/hook wrote to ~/.cache, app/plugin_data/<dir> does not exist
+        cache = home / ".cache" / "mindslice-plugin" / "antigravity"
+        cache.mkdir(parents=True)
+        (cache / "active_workspace.json").write_text('{"workspace": "/ws"}\n')
+        self.assertEqual(driver.plugin_data_dir(), cache)
+        # installed under "mindslice" while symlinked to plugins/antigravity: app/plugin_data/mindslice wins
+        installed = app / "plugin_data" / "mindslice"
+        installed.mkdir(parents=True)
+        self.assertEqual(driver.plugin_data_dir(), installed)
+
 
 @only("antigravity")
 class LauncherTest(PluginTestCase):
@@ -273,12 +341,17 @@ class LauncherTest(PluginTestCase):
 
     @unittest.skipIf(WINDOWS, "POSIX launchers")
     def test_order_and_paths(self) -> None:
+        launcher = self.fake_python("py", "LAUNCHER")
         py3 = self.fake_python("python3", "PY3")
         py = self.fake_python("python", "PY")
         tools = self.tmp / "tools"  # what the launcher needs besides a Python, and no real python3
         tools.mkdir()
         for name in ("dirname", "readlink"):
             (tools / name).symlink_to(shutil.which(name))
+        # py first (on Windows Git Bash, python3 is often the Microsoft Store stub), then python3, then python
+        first = subprocess.run([str(PLUGIN / "adapter" / "mcp")], capture_output=True, text=True,
+                               env={"PATH": f"{launcher.parent}:{py3.parent}:{tools}"})
+        self.assertEqual(first.stdout.strip(), f"LAUNCHER {PLUGIN / 'adapter' / 'entry.py'} mcp", first.stderr)
         env = {"PATH": f"{py3.parent}:{py.parent}:{tools}"}
         mcp = subprocess.run([str(PLUGIN / "adapter" / "mcp")], capture_output=True, text=True, env=env)
         self.assertEqual(mcp.stdout.strip(), f"PY3 {PLUGIN / 'adapter' / 'entry.py'} mcp", mcp.stderr)
@@ -286,6 +359,10 @@ class LauncherTest(PluginTestCase):
                              text=True, env={"PATH": f"{py.parent}:{tools}"})
         self.assertEqual(cli.stdout.strip(), f"PY {PLUGIN / 'bin' / '..' / 'adapter' / 'entry.py'} -w a b status",
                          cli.stderr)
+        cyg = self.fake_python("cygpath", "C:/win")
+        win = subprocess.run([str(PLUGIN / "adapter" / "mcp")], capture_output=True, text=True,
+                             env={"PATH": f"{launcher.parent}:{cyg.parent}:{tools}", "OS": "Windows_NT"})
+        self.assertEqual(win.stdout.strip(), f"LAUNCHER C:/win -m {PLUGIN / 'adapter' / 'entry.py'} mcp", win.stderr)
         none = subprocess.run([str(PLUGIN / "adapter" / "mcp")], capture_output=True, text=True,
                               env={"PATH": str(tools)})
         self.assertEqual(none.returncode, 1)

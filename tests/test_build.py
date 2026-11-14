@@ -141,6 +141,14 @@ class OutputTest(unittest.TestCase):
             self.assertTrue(text.startswith(f"---\nname: {skill.name}\n"), skill.name)
             self.assertNotIn("{{", text)
 
+    def test_bootstrap_scripts_parse_on_python38(self) -> None:
+        import ast
+
+        for rel in ("adapter/entry.py", "adapter/hook.py"):
+            p = PLUGIN / rel
+            if p.is_file():
+                ast.parse(p.read_text(encoding="utf-8"), filename=rel, feature_version=(3, 8))
+
     def test_target_pins_the_locked_wheel(self) -> None:
         engine = json.loads((PLUGIN / "adapter" / "target.json").read_text())["engine"]
         self.assertEqual(engine, {"version": LOCK["version"], "url": LOCK["wheel"]["url"],
@@ -266,9 +274,10 @@ class BuildCheckTest(unittest.TestCase):
         for bad in (png(1024, 768), png(256, 256), png(4096, 4096), b"GIF89a" + b"\0" * 30):
             with self.assertRaises(build.BuildError):
                 build.check_icon(bad, Path("icon.png"))
-        icon = PLUGIN / ".claude-plugin" / "icon.png"
-        if icon.exists():
-            build.check_icon(icon.read_bytes(), icon)
+        for rel in (".claude-plugin/icon.png", "assets/logo.png"):
+            icon = PLUGIN / rel
+            if icon.exists():
+                build.check_icon(icon.read_bytes(), icon)
 
     def test_dead_links_fail(self) -> None:
         files = {"skills/a/SKILL.md": build.OutFile(b"see [x](../b/SKILL.md)")}

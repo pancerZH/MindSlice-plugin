@@ -7,7 +7,7 @@
   "page_limit": 15500,
   "hook_slots": 8,
   "hook_event": "SessionStart",
-  "hook_command": "python3 adapter/hook.py || py adapter/hook.py",
+  "hook_command": "py adapter/hook.py || python3 adapter/hook.py || python adapter/hook.py",
   "hook_timeout": 60,
   "skills": {
     "setup": true,

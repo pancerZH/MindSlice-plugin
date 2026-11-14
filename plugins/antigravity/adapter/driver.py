@@ -2,9 +2,9 @@
 
 Measured on Antigravity CLI 1.5.9 (PLAN section 12):
 
-- ``hooks.json`` at the plugin root runs ``python3 adapter/hook.py || py adapter/hook.py`` once per new
-  conversation (``sh -c`` on macOS/Linux, ``cmd /c`` on Windows, in the plugin directory). One process prints
-  every page, each one a ``systemMessage`` step of ``{"injectSteps": [...]}``; Antigravity cuts a single system
+- ``hooks.json`` at the plugin root runs ``py adapter/hook.py || python3 adapter/hook.py || python adapter/hook.py``
+  once per new conversation (``sh -c`` on macOS/Linux, ``cmd /c`` on Windows, in the plugin directory). One process
+  prints every page, each one a ``systemMessage`` step of ``{"injectSteps": [...]}``; Antigravity cuts a single system
   message at 48 KiB of UTF-8 (wrapper included), so a page is at most ``page_limit`` UTF-16 units (UTF-8 never
   takes more than 3 bytes per unit) and the driver checks its byte length again before printing it.
 - Hooks get ``PLUGIN_ROOT`` and ``PLUGIN_DATA``, but not the user's settings: the MCP server's ``variables``
@@ -34,10 +34,15 @@ CLI_HINT = ("The `mindslice` CLI is on the PATH of your terminal tool (run_comma
             "doctor) are CLI-only. Run `mindslice apply` or `discard` only when the user approves it explicitly "
             "(see /mindslice:review).")
 
-PLUGIN_ROOT = Path(__file__).resolve().parent.parent
+PLUGIN_ROOT = Path(os.path.abspath(__file__)).parent.parent
+REAL_PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 HOOK_BYTE_LIMIT = 48000  # Antigravity truncates a system message beyond 49,152 bytes, its own ~230-byte wrapper included
 BRIDGE_WAIT = 5.0  # seconds the hook waits for the MCP server's first bridge file
 APP_DIRS = ("antigravity-cli", "antigravity", "antigravity-ide")  # ~/.gemini/<app>: CLI, Antigravity 2.0, IDE
+STAGE_WRITES_WARNING = "stage_writes_warning.txt"
+COLD_START_HINT = (" (If the MindSlice MCP tools `manifest`, `search`, `read`, `write` are available in this "
+                   "conversation, the MCP server finished starting after the startup hook: call `manifest` with "
+                   "`include_always=true` before you reply.)")
 
 
 def _clean(value: str | None) -> str | None:
@@ -53,51 +58,174 @@ def home_dir() -> Path | None:
     return Path(value) if value else None
 
 
+def _dir_names() -> tuple[str, ...]:
+    names = [PLUGIN_ROOT.name]
+    for extra in (REAL_PLUGIN_ROOT.name, "mindslice"):
+        if extra not in names:
+            names.append(extra)
+    return tuple(names)
+
+
 def plugin_data_dir() -> Path:
     # Hooks and the MCP server: PLUGIN_DATA (installed plugins only). The agent's terminal tool: the app's data
-    # directory. The user's own terminal: the app data directory that holds this plugin's bridge file.
+    # directory when an installed plugin has used it, else the cache directory a workspace plugin uses. The user's
+    # own terminal: the data directory that holds the newest bridge file.
     data = _clean(os.environ.get("PLUGIN_DATA")) or _clean(os.environ.get("MINDSLICE_PLUGIN_DATA"))
     if data:
         return Path(data)
+    home = home_dir()
+    cache = home / ".cache" / "mindslice-plugin" / NAME if home is not None else None
     app = _clean(os.environ.get("ANTIGRAVITY_APP_DATA_DIR"))
     if app:
-        return Path(app) / "plugin_data" / PLUGIN_ROOT.name
-    home = home_dir()
-    if home is None:
+        app_base = Path(app) / "plugin_data"
+        for name in _dir_names():
+            candidate = app_base / name
+            if candidate.is_dir():
+                return candidate
+        if cache is not None and (cache / "active_workspace.json").is_file():
+            return cache
+        return app_base / PLUGIN_ROOT.name
+    if cache is None:
         raise OSError("mindslice plugin: no plugin data directory (PLUGIN_DATA) and no home directory")
+    candidates = [home / ".gemini" / app_dir / "plugin_data" / name
+                  for app_dir in APP_DIRS for name in _dir_names()] + [cache]
     found = []
-    for app_dir in APP_DIRS:
-        candidate = home / ".gemini" / app_dir / "plugin_data" / PLUGIN_ROOT.name
+    for candidate in candidates:
         try:
             found.append(((candidate / "active_workspace.json").stat().st_mtime, candidate))
         except OSError:
             pass
     if found:
         return max(found)[1]
-    return home / ".cache" / "mindslice-plugin" / NAME
+    return cache
+
+
+def _invalid_workspace_message(raw: str, reason: str) -> str:
+    return (f"The configured MindSlice memory workspace {raw!r} {reason}. The plugin loaded no memory. "
+            "Set \"Memory workspace\" in the plugin's settings (/plugin in the CLI, or the plugin's page in the "
+            "Antigravity app) to an absolute path outside the plugin folder (for example ~/mindslice), then start "
+            "a new conversation.")
+
+
+def _validate_workspace(value: str) -> tuple[Path | None, str | None]:
+    import core
+
+    expanded = core.expand_home(value)
+    if not Path(expanded).is_absolute():
+        why = ("uses an unexpanded shell variable (use ~/... or a full path instead)"
+               if value.startswith(("$", "%")) else "is a relative path, not an absolute path")
+        return None, _invalid_workspace_message(value, why)
+    path = Path(os.path.abspath(expanded))
+    try:
+        resolved = path.resolve()
+    except OSError:
+        resolved = path
+    roots = [(PLUGIN_ROOT, "is inside the plugin installation folder (which plugin updates replace)"),
+             (REAL_PLUGIN_ROOT, "is inside the plugin installation folder (which plugin updates replace)")]
+    try:
+        data_dir = plugin_data_dir()
+        roots += [(data_dir, "is inside the plugin's internal data folder"),
+                  (data_dir.resolve(), "is inside the plugin's internal data folder")]
+    except OSError:
+        pass
+    for root, why in roots:
+        for candidate in (path, resolved):
+            if candidate == root or root in candidate.parents:
+                return None, _invalid_workspace_message(value, why)
+    return path, None
+
+
+def _clear_bridge() -> None:
+    import core
+
+    try:
+        core.bridge_path().unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _bridge_error() -> str | None:
+    import core
+
+    try:
+        value = json.loads(core.bridge_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    err = value.get("error") if isinstance(value, dict) else None
+    return err if isinstance(err, str) and err else None
 
 
 def configured_workspace() -> str | None:
     # the MCP server's copy of the "workspace" variable (mcp_config.json); hooks never have it
-    value = _clean(os.environ.get("MINDSLICE_PLUGIN_OPTION_WORKSPACE"))
-    if value:
-        _record_setting(value)
-    return value
+    raw = os.environ.get("MINDSLICE_PLUGIN_OPTION_WORKSPACE")
+    if raw is None:
+        return None
+    value = _clean(raw)
+    if value is None:
+        # An empty or unsubstituted setting means the plugin is unconfigured (e.g. after reinstall): drop any bridge
+        # left in plugin_data from an earlier install so hooks do not keep delivering memory without the MCP tools.
+        _clear_bridge()
+        return None
+    return _record_setting(value)
 
 
-def _record_setting(value: str) -> None:
+def _record_setting(value: str) -> str | None:
     """Point the bridge file at the setting as soon as the MCP server reads it, before the workspace is checked:
-    the server refuses a folder that holds other files and exits, and the hook must then report that folder, not
+    the server refuses an invalid or occupied folder and exits, and the hook must then report that setting, not
     keep delivering the workspace an earlier setting named."""
     import core
 
-    path = Path(os.path.abspath(core.expand_home(value)))
+    path, err = _validate_workspace(value)
+    if err is not None or path is None:
+        sys.stderr.write(f"mindslice plugin: {err}\n")
+        try:
+            core.atomic_write(core.bridge_path(),
+                              json.dumps({"invalid_workspace": value, "error": err}, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+        return None
     if core.read_bridge() != str(path):
         core.write_bridge(path)
+    return value
 
 
 def stage_writes_enabled() -> bool:
-    return (_clean(os.environ.get("MINDSLICE_PLUGIN_STAGE_WRITES")) or "").lower() in ("1", "true", "yes", "on")
+    import core
+
+    cleaned = _clean(os.environ.get("MINDSLICE_PLUGIN_STAGE_WRITES"))
+    low = (cleaned or "").lower()
+    if low in ("", "0", "false", "no", "off"):
+        _set_stage_warning(None)
+        return False
+    if low in ("1", "true", "yes", "on"):
+        _set_stage_warning(None)
+        return True
+    note = (f"Note: the plugin setting \"Review every write\" (`stage_writes`) is set to {cleaned!r}, which is not "
+            "`true` or `false`; staging every write for safety until the user sets it to `true` or `false`.")
+    sys.stderr.write(f"mindslice plugin: {note}\n")
+    _set_stage_warning(note)
+    return True
+
+
+def _set_stage_warning(note: str | None) -> None:
+    import core
+
+    try:
+        target = plugin_data_dir() / STAGE_WRITES_WARNING
+        if note is None:
+            target.unlink(missing_ok=True)
+        else:
+            core.atomic_write(target, note + "\n")
+    except OSError:
+        pass
+
+
+def startup_notes() -> list[str]:
+    try:
+        text = (plugin_data_dir() / STAGE_WRITES_WARNING).read_text(encoding="utf-8").strip()
+    except OSError:
+        return []
+    return [text] if text else []
 
 
 def launcher_dir() -> Path:
@@ -116,14 +244,14 @@ def _hook_input() -> dict:
 
 
 def _await_bridge() -> None:
-    """The MCP server writes the bridge file once it has resolved the workspace; at the very first session it may
+    """The MCP server writes the bridge file once it has read the workspace setting; at the very first session it may
     still be starting (or installing the engine) when the hook runs."""
     import core
 
-    if core.resolve("hook").state != core.UNSET:
+    if core.resolve("hook").state != core.UNSET or _bridge_error() is not None:
         return
     deadline = time.monotonic() + BRIDGE_WAIT
-    while time.monotonic() < deadline and core.read_bridge() is None:
+    while time.monotonic() < deadline and core.read_bridge() is None and _bridge_error() is None:
         time.sleep(0.1)
 
 
@@ -148,9 +276,18 @@ def run_hook(args: list[str]) -> int:
         return 0
     cfg = core.target_config()
     info = _hook_input()
-    session = str(info.get("conversationId") or f"ppid-{os.getppid()}")
+    session = str(info.get("conversationId") or _clean(os.environ.get("ANTIGRAVITY_CONVERSATION_ID"))
+                  or f"ppid-{os.getppid()}")
     _await_bridge()
-    result = core.hook_pages(session, int(cfg["page_limit"]), int(cfg["hook_slots"]))
-    sys.stdout.buffer.write((json.dumps(inject(result.pages), ensure_ascii=False) + "\n").encode("utf-8"))
+    err = _bridge_error()
+    state = core.resolve("hook").state
+    if err is not None and state == core.UNSET:
+        pages = [f"[MindSlice plugin: memory not loaded] {err}"]
+    else:
+        result = core.hook_pages(session, int(cfg["page_limit"]), int(cfg["hook_slots"]))
+        pages = list(result.pages)
+        if state == core.UNSET and pages:
+            pages[0] = pages[0] + COLD_START_HINT
+    sys.stdout.buffer.write((json.dumps(inject(pages), ensure_ascii=False) + "\n").encode("utf-8"))
     sys.stdout.flush()
     return 0

@@ -33,10 +33,13 @@ how much of the startup capacity the standing memory uses, and the result of a h
 MCP entry point.
 
 - **`mindslice: command not found`** (or a `mindslice` outside the plugin folder answers, without
-  `plugin-status`): the plugin is not enabled in this conversation, or another `mindslice` comes first on the
-  PATH (see "Migrating from a manual MindSlice setup"). Ask the user to open `/plugin` in the CLI (or the
-  Customizations page in the Antigravity app), check that `mindslice` is installed and enabled, and start a new
-  conversation. The plugin stays disabled until its settings are filled in (Step 3).
+  `plugin-status`): Antigravity appends the plugin's `bin/` at the end of `PATH`, so check `which -a mindslice`
+  (or `~/.gemini/config/plugins/mindslice/bin/mindslice plugin-status`) first in case an older `mindslice` comes
+  earlier on `PATH` (see "Migrating from a manual MindSlice setup"). If the plugin's own command is absent, the
+  plugin is not enabled in this conversation: ask the user to open `/plugin` in the CLI, or give them
+  `[mindslice](customization://mindslice)` in the Antigravity app (keyed on the install folder name if different),
+  check that `mindslice` is installed and enabled, and start a new conversation. The plugin stays disabled until
+  its settings are filled in (Step 3).
 - **Python error** (`needs Python >= 3.12`, or `Python 3.12 or newer is required`): help the user install
   Python 3.12 or newer (Homebrew, the distribution's package, `uv python install 3.12`, or pyenv; on Windows
   the python.org installer). The plugin finds `python3.12`/`python3.13` on `PATH`, in `/opt/homebrew/bin`,
@@ -86,7 +89,8 @@ its own configuration, which you must not edit):
 
 - **Antigravity CLI**: run `/plugin`, select **mindslice**, choose **Configure MCP servers...**, and enter the
   absolute `<workspace>` agreed in Step 2. Tell them the exact path to paste.
-- **Antigravity app**: open the plugin's page on the Customizations page and fill in the same field.
+- **Antigravity app / IDE**: open `[mindslice](customization://mindslice)` (keyed on the plugin's install folder
+  name if different) on the Customizations page and fill in the same field.
 
 **"Review every write"** (`stage_writes`) is required too: `false` for most users, `true` when the user runs a
 small local model, so every write waits for their review.
@@ -176,10 +180,11 @@ should call `manifest` first, because Antigravity does not re-inject the pages a
 
 The plugin's command is on the PATH of Antigravity's terminal tool only. If the user wants it in their own
 terminal (for example to run `mindslice review` themselves), offer to link it, after showing them the
-command (`<plugin>` is the plugin folder `plugin-status` prints, without `/adapter/...`):
+command (`<plugin_bin>` is the plugin's `.../bin/mindslice` path printed by `command -v mindslice` or
+`which -a mindslice`, typically `~/.gemini/config/plugins/mindslice/bin/mindslice`):
 
 ```bash
-mkdir -p ~/.local/bin && ln -sf "<plugin>/bin/mindslice" ~/.local/bin/mindslice
+mkdir -p ~/.local/bin && ln -sf "<plugin_bin>" ~/.local/bin/mindslice
 ```
 
 The link follows reinstalls into the same folder; uninstalling the plugin leaves it dangling. Skip it when
@@ -203,7 +208,8 @@ you found, and remove it **only after they agree**, editing surgically so every 
   own rule (`rules/AGENTS.md`) replaces it.
 - **The PyPI/checkout `mindslice` command** can stay, but it comes before the plugin's command on the
   terminal tool's PATH (the plugin's `bin/` is appended last) and does not know the plugin's workspace: if
-  `command -v mindslice` does not print a path inside the plugin folder, use the full path from `plugin-status`
+  `command -v mindslice` does not print a path inside the plugin folder, find the plugin's own binary with
+  `which -a mindslice` (typically `~/.gemini/config/plugins/mindslice/bin/mindslice`) and call that full path,
   or uninstall the other one with the user's agreement. Removing a `MINDSLICE_WORKSPACE` export from a shell
   profile is worth suggesting: it overrides the plugin's choice of workspace for every `mindslice` command.
 

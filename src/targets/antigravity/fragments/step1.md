@@ -3,10 +3,13 @@ how much of the startup capacity the standing memory uses, and the result of a h
 MCP entry point.
 
 - **`mindslice: command not found`** (or a `mindslice` outside the plugin folder answers, without
-  `plugin-status`): the plugin is not enabled in this conversation, or another `mindslice` comes first on the
-  PATH (see "Migrating from a manual MindSlice setup"). Ask the user to open `/plugin` in the CLI (or the
-  Customizations page in the Antigravity app), check that `mindslice` is installed and enabled, and start a new
-  conversation. The plugin stays disabled until its settings are filled in (Step 3).
+  `plugin-status`): Antigravity appends the plugin's `bin/` at the end of `PATH`, so check `which -a mindslice`
+  (or `~/.gemini/config/plugins/mindslice/bin/mindslice plugin-status`) first in case an older `mindslice` comes
+  earlier on `PATH` (see "Migrating from a manual MindSlice setup"). If the plugin's own command is absent, the
+  plugin is not enabled in this conversation: ask the user to open `/plugin` in the CLI, or give them
+  `[mindslice](customization://mindslice)` in the Antigravity app (keyed on the install folder name if different),
+  check that `mindslice` is installed and enabled, and start a new conversation. The plugin stays disabled until
+  its settings are filled in (Step 3).
 - **Python error** (`needs Python >= 3.12`, or `Python 3.12 or newer is required`): help the user install
   Python 3.12 or newer (Homebrew, the distribution's package, `uv python install 3.12`, or pyenv; on Windows
   the python.org installer). The plugin finds `python3.12`/`python3.13` on `PATH`, in `/opt/homebrew/bin`,

@@ -36,9 +36,13 @@ if agy plugin list --json 2>/dev/null | "$PY" -c 'import json,sys; d=json.load(s
   echo "a mindslice plugin is already installed in Antigravity: uninstall it first (its settings would be lost)" >&2
   exit 2
 fi
+DATA_DIR="$HOME/.gemini/antigravity-cli/plugin_data/mindslice"
+HAD_DATA=0
+[ -e "$DATA_DIR" ] && HAD_DATA=1
 cleanup() {
   tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
   agy plugin uninstall mindslice > /dev/null 2>&1 || true
+  if [ "$HAD_DATA" = 0 ]; then rm -rf "$DATA_DIR"; fi
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -66,11 +70,29 @@ for l in open(p, encoding="utf-8"):
         print(a.get("ToolName") or t.get("name"))' "$1"; }
 
 tui() { tmux send-keys -t "$TMUX_SESSION" "$@"; sleep 1.5; }
+select_mindslice() {  # move the /plugin cursor onto the mindslice row when other plugins are installed
+  local pane steps i=0
+  pane="$(tmux capture-pane -t "$TMUX_SESSION" -p)"
+  if grep -Eq '^[[:space:]]*[›>]' <<<"$pane"; then
+    while ! tmux capture-pane -t "$TMUX_SESSION" -p | grep -Eq '^[[:space:]]*[›>].*\bmindslice\b'; do
+      i=$((i + 1))
+      if [ "$i" -gt 30 ]; then echo "could not select mindslice in /plugin" >&2; return 1; fi
+      tui Down
+    done
+  else
+    steps="$("$PY" -c 'import re,sys
+rows=[l for l in sys.stdin.read().splitlines() if re.search(r"\[(enabled|disabled)\]", l)]
+idx=next((i for i,l in enumerate(rows) if re.search(r"\bmindslice\b", l)), 0)
+print(idx)' <<<"$pane")"
+    while [ "$i" -lt "$steps" ]; do tui Down; i=$((i + 1)); done
+  fi
+}
 configure() {  # configure <workspace> <stage_writes>: fill the plugin's settings in /plugin, enabling it if needed
   (cd "$WORK/proj" && tmux new-session -d -s "$TMUX_SESSION" -x 200 -y 50 "agy --model $MODEL")
   sleep 6
   if tmux capture-pane -t "$TMUX_SESSION" -p | grep -q "trust the contents"; then tui Enter; sleep 3; fi
   tui "/plugin"; tui Enter; sleep 2
+  select_mindslice
   if tmux capture-pane -t "$TMUX_SESSION" -p | grep -q "\[disabled\] mindslice"; then
     tui Space  # turning it on opens the settings form
   else

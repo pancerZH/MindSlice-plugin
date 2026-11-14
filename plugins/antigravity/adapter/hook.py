@@ -15,26 +15,48 @@ import sys
 TIMEOUT = 55  # below the hook's timeout in hooks.json
 
 
+def _wrap(message):
+    return json.dumps({"injectSteps": [{"systemMessage": {"systemMessage": message}}]}, ensure_ascii=False)
+
+
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     data = b""
     if sys.stdin is not None and not sys.stdin.isatty():
         data = sys.stdin.buffer.read()
+    err = ""
+    code = 0
     try:
         # the environment is inherited as is
         proc = subprocess.run([sys.executable, os.path.join(here, "entry.py"), "hook", "1"], input=data,
-                              stdout=subprocess.PIPE, timeout=TIMEOUT)
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=TIMEOUT)
         out = proc.stdout.decode("utf-8", "replace")
+        err = proc.stderr.decode("utf-8", "replace")
+        code = proc.returncode
     except (OSError, subprocess.SubprocessError) as exc:
         out = "[MindSlice plugin could not start] %s\nTell the user MindSlice memory is unavailable in this " \
               "session and why.\n" % exc
+    if err:
+        sys.stderr.write(err)
+        sys.stderr.flush()
     text = out.strip()
+    result = None
     if text.startswith("{"):
-        result = text
-    elif text:
-        result = json.dumps({"injectSteps": [{"systemMessage": {"systemMessage": text}}]}, ensure_ascii=False)
-    else:
-        result = "{}"
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                result = text
+        except ValueError:
+            result = None
+    if result is None:
+        if text:
+            result = _wrap(text)
+        elif code != 0:
+            detail = (err.strip().splitlines() or ["exit status %d" % code])[-1]
+            result = _wrap("[MindSlice plugin could not start] %s\nTell the user MindSlice memory is unavailable in "
+                           "this session and why." % detail)
+        else:
+            result = "{}"
     sys.stdout.buffer.write((result + "\n").encode("utf-8"))
     sys.stdout.flush()
     return 0

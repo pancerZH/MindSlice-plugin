@@ -7,7 +7,8 @@ its own configuration, which you must not edit):
 
 - **Antigravity CLI**: run `/plugin`, select **mindslice**, choose **Configure MCP servers...**, and enter the
   absolute `<workspace>` agreed in Step 2. Tell them the exact path to paste.
-- **Antigravity app**: open the plugin's page on the Customizations page and fill in the same field.
+- **Antigravity app / IDE**: open `[mindslice](customization://mindslice)` (keyed on the plugin's install folder
+  name if different) on the Customizations page and fill in the same field.
 
 **"Review every write"** (`stage_writes`) is required too: `false` for most users, `true` when the user runs a
 small local model, so every write waits for their review.

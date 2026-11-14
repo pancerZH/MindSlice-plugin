@@ -19,10 +19,11 @@ should call `manifest` first, because Antigravity does not re-inject the pages a
 
 The plugin's command is on the PATH of Antigravity's terminal tool only. If the user wants it in their own
 terminal (for example to run `mindslice review` themselves), offer to link it, after showing them the
-command (`<plugin>` is the plugin folder `plugin-status` prints, without `/adapter/...`):
+command (`<plugin_bin>` is the plugin's `.../bin/mindslice` path printed by `command -v mindslice` or
+`which -a mindslice`, typically `~/.gemini/config/plugins/mindslice/bin/mindslice`):
 
 ```bash
-mkdir -p ~/.local/bin && ln -sf "<plugin>/bin/mindslice" ~/.local/bin/mindslice
+mkdir -p ~/.local/bin && ln -sf "<plugin_bin>" ~/.local/bin/mindslice
 ```
 
 The link follows reinstalls into the same folder; uninstalling the plugin leaves it dangling. Skip it when

@@ -26,12 +26,14 @@ Ask the user, in their language, three separate questions, and wait for the answ
 
 The user does this: in the CLI, `/plugin`, select **mindslice**, then `space` to disable it or `ctrl+s` to
 uninstall it; from a shell, `agy plugin disable mindslice` or `agy plugin uninstall mindslice`; in the
-Antigravity app, the plugin's page on the Customizations page. Uninstalling also clears the plugin's settings.
+Antigravity app or IDE, `[mindslice](customization://mindslice)` (keyed on the install folder name if
+different) on the Customizations page. Uninstalling also clears the plugin's settings.
 
 Remove only the leftovers the user agreed to: `rm ~/.local/bin/mindslice` only if it is a link to the plugin's
 `bin/mindslice` (uninstalling removes the target, so the link would dangle); manual configuration as the setup
 skill's migration section describes. The plugin's data folder (`plugin_data/mindslice` under
-`~/.gemini/antigravity-cli/` or `~/.gemini/antigravity/`, holding the engine copy) can be deleted too.
+`~/.gemini/antigravity-cli/`, `~/.gemini/antigravity/` or `~/.gemini/antigravity-ide/`, holding the engine copy
+and `active_workspace.json`) can be deleted too.
 
 ## Step 4 - Delete the workspace (only if the user explicitly asked)
 
