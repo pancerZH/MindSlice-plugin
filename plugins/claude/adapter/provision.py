@@ -62,7 +62,7 @@ def _fetch(spec: dict[str, Any]) -> bytes:
     source = local or spec["url"]
     try:
         if local:
-            data = Path(local).expanduser().read_bytes()
+            data = Path(local).read_bytes()
         else:
             req = urllib.request.Request(spec["url"], headers={"User-Agent": "mindslice-plugin"})
             with urllib.request.urlopen(req, timeout=DOWNLOAD_TIMEOUT) as resp:  # honours HTTPS_PROXY etc.
@@ -152,7 +152,7 @@ def ensure_engine(spec: dict[str, Any], data_dir: Path) -> Path | None:
     """The directory to put on ``sys.path`` for the pinned engine, or None when it is already importable."""
     override = os.environ.get("MINDSLICE_PLUGIN_ENGINE_DIR", "").strip()
     if override:
-        path = Path(override).expanduser()
+        path = Path(override)
         if not (path / "mindslice" / "__init__.py").is_file():
             raise EngineUnavailable(f"MINDSLICE_PLUGIN_ENGINE_DIR={override} has no mindslice/ package")
         return path

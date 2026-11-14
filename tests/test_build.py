@@ -161,6 +161,11 @@ class DirectoryRulesTest(unittest.TestCase):
                 rest = code[m.end():m.end() + 6]
                 self.assertTrue(rest.startswith(('.get("', '["', '.pop("')), f"{f.name}: {code[m.start():m.end() + 30]!r}")
             self.assertNotIn("env=", re.sub(r"#.*", "", code), f"{f.name} passes an explicit environment to a process")
+            for hidden in ("expanduser", "expandvars", "Path.home", "getpass", "environ.items", "environ.copy"):
+                self.assertNotIn(hidden, code, f"{f.name} reads environment variables chosen at run time ({hidden})")
+            names = re.findall(r'os\.environ(?:\.get|\.pop)?\(?\[?"([^"]*)"', code)
+            for name in names:
+                self.assertRegex(name, r"^[A-Za-z_][A-Za-z0-9_]*$", f"{f.name}: unusual variable name {name!r}")
 
     """What claude.ai/directory checks before it can validate the repository at all."""
 

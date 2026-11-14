@@ -282,12 +282,21 @@ def _candidates(entry: str, cli_value: str | None) -> list[tuple[str, Any]]:
             ("active_workspace.json", read_bridge)]
 
 
+def expand_home(raw: str) -> str:
+    """``~`` and ``~/...`` against the driver's home directory (no other ``~user`` forms)."""
+    if raw == "~" or raw.startswith(("~/", "~" + os.sep)):
+        home = driver.home_dir()
+        if home is not None:
+            return str(home) + raw[1:]
+    return raw
+
+
 def resolve(entry: str, cli_value: str | None = None) -> Target:
     """The workspace this entry point should serve, by the priority order of section 4.5."""
     for source, get in _candidates(entry, cli_value):
         raw = clean_value(get())
         if raw:
-            path = Path(os.path.abspath(os.path.expanduser(raw)))
+            path = Path(os.path.abspath(expand_home(raw)))
             return Target(classify(path), path, source)
     return Target(UNSET)
 

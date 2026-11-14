@@ -46,11 +46,22 @@ def _clean(value: str | None) -> str | None:
     return value if value and "${" not in value else None
 
 
+def home_dir() -> Path | None:
+    """The user's home, read by its literal variable name (USERPROFILE on Windows, else HOME)."""
+    value = _clean(os.environ.get("USERPROFILE")) if os.name == "nt" else _clean(os.environ.get("HOME"))
+    return Path(value) if value else None
+
+
 def plugin_data_dir() -> Path:
     # Claude sets CLAUDE_PLUGIN_DATA for hooks and the MCP server, not for the Bash tool: there the CLI uses the
     # MINDSLICE_PLUGIN_DATA that slot 1 exported, so it shares the engine copy and the bridge file.
     data = _clean(os.environ.get("CLAUDE_PLUGIN_DATA")) or _clean(os.environ.get("MINDSLICE_PLUGIN_DATA"))
-    return Path(data) if data else Path.home() / ".cache" / "mindslice-plugin" / NAME
+    if data:
+        return Path(data)
+    home = home_dir()
+    if home is None:
+        raise OSError("mindslice plugin: no plugin data directory (CLAUDE_PLUGIN_DATA) and no home directory")
+    return home / ".cache" / "mindslice-plugin" / NAME
 
 
 def configured_workspace() -> str | None:

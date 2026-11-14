@@ -15,10 +15,10 @@ import sys
 
 MIN_VERSION = (3, 12)
 WINDOWS = os.name == "nt"
-SEARCH_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "~/.local/bin", "~/.pyenv/shims")
+SEARCH_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
+HOME_DIRS = (".local/bin", ".pyenv/shims")  # under $HOME
 NAMES = ("python3.14", "python3.13", "python3.12", "python3")
 WINDOWS_NAMES = ("python3.14.exe", "python3.13.exe", "python3.12.exe", "python.exe", "python3.exe")
-WINDOWS_VERSIONS = ("314", "313", "312")
 PROBE = "import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)"
 _PY_LIST_PATH = re.compile(r"([A-Za-z]:[\\/].*?\.exe)\s*$", re.I)
 
@@ -41,12 +41,6 @@ def _windows_paths():
         out = ""
     for path in parse_py_list(out):
         yield path
-    roots = [os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python"),
-             os.environ.get("ProgramFiles", ""), os.environ.get("ProgramFiles(x86)", "")]
-    for version in WINDOWS_VERSIONS:
-        for root in roots:
-            if root:
-                yield os.path.join(root, "Python" + version, "python.exe")
     dirs = [d for d in os.environ.get("PATH", "").split(os.pathsep) if d]
     for name in WINDOWS_NAMES:
         for d in dirs:
@@ -55,7 +49,10 @@ def _windows_paths():
 
 def _posix_paths():
     dirs = [d for d in os.environ.get("PATH", "").split(os.pathsep) if d]
-    dirs += [os.path.expanduser(d) for d in SEARCH_DIRS]
+    dirs += list(SEARCH_DIRS)
+    home = os.environ.get("HOME", "")  # read by its literal name
+    if home:
+        dirs += [os.path.join(home, d) for d in HOME_DIRS]
     for name in NAMES:
         for d in dirs:
             yield os.path.join(d, name)
@@ -113,8 +110,7 @@ def _bootstrap():
                 continue
             os.environ["_MINDSLICE_REEXEC"] = "1"
             _relaunch(exe)
-    where = ("python.org installs (found with the py launcher), %LOCALAPPDATA%\\Programs\\Python and PATH are "
-             "searched" if WINDOWS else
+    where = ("python.org installs (found with the py launcher) and PATH are searched" if WINDOWS else
              "python3.12 on PATH, Homebrew, ~/.local/bin or pyenv are searched")
     _fail("needs Python >= 3.12 (found %d.%d at %s); install Python 3.12+ (%s) and restart the session."
           % (sys.version_info[0], sys.version_info[1], sys.executable, where))

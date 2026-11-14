@@ -411,6 +411,15 @@ class ShimTest(PluginTestCase):
 
 
 class WindowsLogicTest(PluginTestCase):
+    def test_expand_home(self) -> None:
+        os.environ["USERPROFILE" if WINDOWS else "HOME"] = str(self.tmp / "home")
+        self.assertEqual(core.expand_home("~/mem"), str(self.tmp / "home") + "/mem")
+        self.assertEqual(core.expand_home("~"), str(self.tmp / "home"))
+        self.assertEqual(core.expand_home("~bob/mem"), "~bob/mem")
+        self.assertEqual(core.expand_home("/abs/~/x"), "/abs/~/x")
+        self.configure("~/mem")
+        self.assertEqual(core.resolve("hook").path, Path(os.path.abspath(str(self.tmp / "home") + "/mem")))
+
     def test_parse_py_list(self) -> None:
         import entry
 
