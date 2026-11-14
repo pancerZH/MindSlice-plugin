@@ -150,6 +150,49 @@ class OutputTest(unittest.TestCase):
             self.assertEqual((helpers.ENGINE / path).read_bytes(), blob, path)
 
 
+class DirectoryRulesTest(unittest.TestCase):
+    """What claude.ai/directory checks before it can validate the repository at all."""
+
+    def test_no_content_changing_git_attributes(self) -> None:
+        lines = [line.split() for line in (REPO / ".gitattributes").read_text().splitlines()
+                 if line.strip() and not line.lstrip().startswith("#")]
+        for pattern, *attrs in lines:
+            for attr in attrs:
+                name = attr.lstrip("-!").split("=")[0]
+                self.assertFalse(name in ("filter", "export-ignore", "export-subst", "ident", "eol",
+                                          "working-tree-encoding") or (name == "text" and attr != "-text"),
+                                 f"{pattern} {attr}: the archive would differ from the repository")
+
+    def test_archive_equals_repository(self) -> None:
+        if not (REPO / ".git").exists() or not shutil.which("git"):
+            self.skipTest("not a git checkout")
+        import io
+        import tarfile
+
+        data = subprocess.run(["git", "-C", str(REPO), "-c", "core.autocrlf=true", "archive", "--worktree-attributes",
+                               "HEAD", "plugins"], capture_output=True, check=True).stdout
+        with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+            for member in tar.getmembers():
+                if member.isfile():
+                    blob = subprocess.run(["git", "-C", str(REPO), "cat-file", "blob", f"HEAD:{member.name}"],
+                                          capture_output=True, check=True).stdout
+                    self.assertEqual(tar.extractfile(member).read(), blob, member.name)
+
+    def test_file_names(self) -> None:
+        import re
+
+        device = re.compile(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$", re.I)
+        names = [p.relative_to(PLUGIN).as_posix() for p in PLUGIN.rglob("*") if "__pycache__" not in p.parts]
+        for name in names:
+            for part in name.split("/"):
+                self.assertFalse(":" in part or "\\" in part or part.endswith((".", " ")) or device.match(part), name)
+                part.encode("utf-8")
+        lowered = [n.lower() for n in names]
+        self.assertEqual(len(lowered), len(set(lowered)), "names that differ only in letter case")
+        for segment in PLUGIN.relative_to(REPO).parts:  # the plugin path given at submission
+            self.assertRegex(segment, r"^[A-Za-z0-9._-]+$")
+
+
 class BuildCheckTest(unittest.TestCase):
     def test_check(self) -> None:
         upstream = local_upstream()
