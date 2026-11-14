@@ -1,0 +1,11 @@
+MindSlice-plugin
+Copyright 2026 pancerZH and the MindSlice-plugin contributors
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This repository packages MindSlice (https://github.com/pancerZH/MindSlice),
+Copyright 2026 pancerZH and the MindSlice contributors, licensed under the
+Apache License, Version 2.0. The skills under plugins/*/skills/ are derived
+from MindSlice's skills/ directory. The MindSlice engine itself is not included:
+the plugins install the pinned release from PyPI at first use. Each built plugin
+under plugins/ carries MindSlice's LICENSE and NOTICE.
