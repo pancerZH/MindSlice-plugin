@@ -29,6 +29,9 @@ if [ "${OS:-}" = Windows_NT ]; then
   PY="${PYTHON:-py}"
   # native programs (claude, python) need C:/... paths, also in environment variables
   REPO="$(cygpath -m "$REPO")"; WORK="$(cygpath -m "$WORK")"
+  # every path here is already C:/...; without this, MSYS rewrites arguments such as the prompt "/compact" into
+  # "C:/Program Files/Git/compact" before claude.exe sees them
+  export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
 else
   PY="${PYTHON:-python3}"
 fi

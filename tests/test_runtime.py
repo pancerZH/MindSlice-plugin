@@ -60,6 +60,64 @@ class HookTest(PluginTestCase):
             self.assertIn("# Empty memory workspace", r.stdout)
             self.assertIn("standing memory complete · 1 pages · 0 cards", r.stdout)
 
+    def make_partial_init(self, path: Path) -> None:
+        """What Workspace.init has written just before it writes mounts.toml."""
+        for sub in ("overlay", "staging", "slices", ".cache"):
+            (path / sub).mkdir(parents=True, exist_ok=True)
+        (path / ".gitignore").write_text(".cache/\n")
+
+    def test_initialization_in_progress_is_awaited(self) -> None:
+        # the race seen on Windows: a hook slot is inside Workspace.init (overlay/ exists, mounts.toml not yet)
+        # while the MCP server resolves the same folder; it must wait for the init lock, not refuse the folder
+        import threading
+
+        from mindslice import Workspace
+        from mindslice.storage.locking import WorkspaceLock
+
+        ws = self.tmp / "ws"
+        ws.mkdir()
+        started = threading.Event()
+
+        def initializer() -> None:
+            lock = WorkspaceLock(core.plugin_data_dir() / "init.lock", timeout=10)
+            with lock.exclusive():
+                self.make_partial_init(ws)
+                started.set()
+                time.sleep(0.5)
+                Workspace.init(ws).close()
+            lock.close()
+
+        t = threading.Thread(target=initializer)
+        t.start()
+        started.wait(5)
+        try:
+            path = core.ensure_workspace(core.resolve("mcp", str(ws)))
+        finally:
+            t.join()
+        self.assertEqual(path, ws)
+        self.assertTrue((ws / "mounts.toml").is_file())
+
+    def test_interrupted_initialization_is_finished(self) -> None:
+        ws = self.tmp / "ws"
+        self.make_partial_init(ws)
+        (ws / ".cache" / "workspace.lock").write_text("")
+        self.configure(ws)
+        r = self.hook(1, session="partial")
+        self.assertIn("standing memory complete", r.stdout)
+        self.assertTrue((ws / "mounts.toml").is_file())
+
+    def test_leftovers_plus_user_files_are_still_refused(self) -> None:
+        ws = self.tmp / "ws"
+        self.make_partial_init(ws)
+        (ws / "overlay" / "mine.md").write_text("user note\n")
+        before = snapshot_files(ws)
+        self.configure(ws)
+        self.assertIn("not empty and is not a MindSlice workspace", self.hook(1, session="mixed").stdout)
+        self.assertEqual(snapshot_files(ws), before)
+        (ws / "overlay" / "mine.md").unlink()
+        (ws / ".gitignore").write_text("node_modules/\n")  # not the generated one
+        self.assertEqual(core.classify(ws), core.OCCUPIED)
+
     def test_occupied_directory_untouched(self) -> None:
         occupied = self.tmp / "notes"
         occupied.mkdir()
@@ -145,6 +203,16 @@ class HookTest(PluginTestCase):
         status = self.run_entry("plugin-status", cmd=SHIM)
         self.assertEqual(status.returncode, 1)
         self.assertIn("pages but only 4 are delivered", status.stdout)
+
+    def test_plugin_status_after_global_options(self) -> None:
+        ws = self.tmp / "plugin-status"  # a path that looks like the subcommand must not confuse routing
+        from mindslice import Workspace
+        Workspace.init(ws).close()
+        r = self.run_entry("-w", str(ws), "plugin-status", "--json", cmd=SHIM)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(json.loads(r.stdout)["workspace"], str(ws))
+        self.assertEqual(json.loads(self.run_entry("--workspace", str(ws), "plugin-status", "--json",
+                                                   cmd=SHIM).stdout)["workspace"], str(ws))
 
     def test_status_self_check_keeps_the_bridge(self) -> None:
         main_ws, other = self.tmp / "main", self.tmp / "other"

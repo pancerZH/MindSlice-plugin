@@ -23,7 +23,7 @@ Start a new session, then run `/mindslice:setup` to seed the memory and verify t
 Requirements: Python 3.12 or newer somewhere on the machine (`python3.12`/`python3.13` on `PATH`, Homebrew,
 `~/.local/bin` or pyenv are found automatically). Supported on Linux, macOS and WSL.
 
-**Windows** (native, not yet verified end to end): install [Git for Windows](https://git-scm.com/downloads/win)
+**Windows** (native): install [Git for Windows](https://git-scm.com/downloads/win)
 (Claude Code runs the plugin's hooks and the `mindslice` command in Git Bash) and Python 3.12+ from
 python.org, then set the plugin option **Python command** to `py` (or the full path of `python.exe`): Claude
 Code starts the MCP server with it, and the default `python3` usually does not exist on Windows. Without Git

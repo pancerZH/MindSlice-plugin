@@ -1,6 +1,6 @@
 {
   "target": "claude",
-  "plugin_version": "0.1.6-1",
+  "plugin_version": "0.1.6-2",
   "upstream": {
     "repo": "https://github.com/pancerZH/MindSlice",
     "commit": "e2b85ad0df537fa862ec555f3ba5c43c59554b44",
@@ -11,15 +11,15 @@
     }
   },
   "files": {
-    ".claude-plugin/plugin.json": "a94b308fde2c43546de96a66aa674bea454d18187b724a4a9f0c1e3ab2285c30",
+    ".claude-plugin/plugin.json": "ef2771b701ef9257ea83d72146ae833a03b53f6351476b1b75ce79f5f09f464f",
     "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
     "NOTICE": "c59a0c528eef8df48a71b5359c4c356ed5f1ef5283a01a7cc837e59464fd1fbf",
-    "README.md": "bf698b5f75a8532d3ce8d86b0c6226e6102a338c371bc5d64440bd5a1b8d06fc",
-    "adapter/core.py": "a1c6f156849b937027d9dbfb9816e001dc52133f3e04d7d0cc5ea3d495fb821a",
+    "README.md": "f559a3e8e919800726f7be55a6ec7f38979e7033d3cfc4ae68eadb767ef64267",
+    "adapter/core.py": "d6e935644b4fac6e2b7824770134ea168dfa8505573bad5afd05f276beda352f",
     "adapter/driver.py": "99f65a13e3f181ddfc0d2563018fc3016f944a8ca4e18143a003a33fe3b9865e",
     "adapter/entry.py": "7c5e356956699ef37b0c4a5d91b4f6e2075e42cae42cc3b3a4b6e2fc83dd1ce0",
     "adapter/provision.py": "9e12552fdc4ec6f4e3c4d3ddac5caac99164aaf5a39d46bfab1e57bd95557eb0",
-    "adapter/target.json": "051aa952d5cf1496063103156373cd813cbebf6eecd99bb9ed24c49359351462",
+    "adapter/target.json": "39b3c7546b7ee60e16c7fe50cf38a477cc9c421f4c777278d858b1626eae44f0",
     "bin/mindslice": "6ce5a18577708cfc19abeea9ce944ce0776e27405889b6f10ceeeb1d48d30101",
     "bin/mindslice.cmd": "3ccac5c20bcbea7a4d201357430bec22d82710fd1006c9ece07d72e3c02265ab",
     "hooks/hooks.json": "2937a553168ec9b2f940f264ab9e369328d9ae1a1c83e2c4302f0f1837f293e7",

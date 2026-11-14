@@ -203,6 +203,32 @@ class Target:
     source: str | None = None
 
 
+# What Workspace.init creates before it writes mounts.toml last (upstream Workspace._bootstrap).
+_BOOTSTRAP_DIRS = ("overlay", "staging", "slices")
+_BOOTSTRAP_GITIGNORE = ".cache/\n"
+
+
+def _bootstrap_leftovers_only(path: Path) -> bool:
+    """True when ``path`` holds nothing but what an unfinished ``Workspace.init`` leaves: empty overlay/,
+    staging/ and slices/, a .cache/ directory and the generated .gitignore. Such a folder is finished, not refused."""
+    try:
+        for entry in path.iterdir():
+            if entry.name in _BOOTSTRAP_DIRS:
+                if not entry.is_dir() or any(entry.iterdir()):
+                    return False
+            elif entry.name == ".cache":
+                if not entry.is_dir():
+                    return False
+            elif entry.name == ".gitignore":
+                if not entry.is_file() or entry.read_text(encoding="utf-8", errors="replace") != _BOOTSTRAP_GITIGNORE:
+                    return False
+            else:
+                return False
+    except OSError:
+        return False
+    return True
+
+
 def classify(path: Path) -> str:
     if (path / MOUNTS_FILE).is_file():
         return WORKSPACE
@@ -214,7 +240,7 @@ def classify(path: Path) -> str:
         next(path.iterdir())
     except StopIteration:
         return EMPTY
-    return OCCUPIED
+    return EMPTY if _bootstrap_leftovers_only(path) else OCCUPIED
 
 
 def bridge_path() -> Path:
@@ -284,10 +310,9 @@ def ensure_workspace(target: Target) -> Path:
     plugin options); anything else that is not a workspace is refused without writing a byte."""
     if target.state == UNSET or target.path is None:
         raise PluginError(unset_message())
-    if target.state == OCCUPIED:
-        raise PluginError(occupied_message(target.path))
-    if target.state in (MISSING, EMPTY):
-        # Hook slots and the MCP server start together: initialize under one lock, re-checking inside it.
+    if target.state != WORKSPACE:
+        # Hook slots and the MCP server start together. Decide under one lock, re-checking inside it: a folder that
+        # looked occupied may be another process's initialization in progress (overlay/ exists, mounts.toml not yet).
         lock = WorkspaceLock(plugin_data_dir() / "init.lock", timeout=30.0)
         try:
             with lock.exclusive():
@@ -927,6 +952,11 @@ PASSTHROUGH_COMMANDS = {"init", "restore"}
 
 def scan_cli(argv: Sequence[str]) -> tuple[bool, str | None, bool]:
     """``(names_workspace, subcommand, help_or_version)`` of an upstream CLI command line."""
+    has_ws, index, meta = _scan(argv)
+    return has_ws, (argv[index] if index is not None else None), meta
+
+
+def _scan(argv: Sequence[str]) -> tuple[bool, int | None, bool]:
     has_ws, command, meta = False, None, False
     i = 0
     while i < len(argv):
@@ -942,7 +972,7 @@ def scan_cli(argv: Sequence[str]) -> tuple[bool, str | None, bool]:
         elif a == "--":
             break
         elif not a.startswith("-") and command is None:
-            command = a
+            command = i
         i += 1
     return has_ws, command, meta
 
@@ -990,4 +1020,7 @@ def main(argv: Sequence[str]) -> int:
         return run_mcp(argv[1:])
     if argv[:1] == ["plugin-status"]:
         return run_status(argv[1:])
+    _, i, _ = _scan(argv)
+    if i is not None and argv[i] == "plugin-status":  # after global options too, as upstream allows: -w DIR plugin-status
+        return run_status(argv[:i] + argv[i + 1:])
     return run_cli(argv)
