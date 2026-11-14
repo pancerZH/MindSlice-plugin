@@ -1,0 +1,1 @@
+Set up the MindSlice memory plugin in Antigravity: choose or connect the memory workspace in the plugin's settings, seed it (an existing workspace, mounted slices or Markdown folders, or a short conversation), clean up an older manual MindSlice setup, and verify with `mindslice plugin-status`, `mindslice doctor` and a fresh `agy -p` conversation.

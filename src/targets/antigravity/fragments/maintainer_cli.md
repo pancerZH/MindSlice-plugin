@@ -1,0 +1,1 @@
+Commands use the `mindslice` CLI that the plugin puts on the PATH of the terminal tool (`run_command`); it targets the plugin's workspace unless you pass `-w <workspace>` or run it inside another MindSlice workspace.

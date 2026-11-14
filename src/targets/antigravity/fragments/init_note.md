@@ -1,0 +1,1 @@
+Initialize the confirmed workspace only if needed: when the plugin's "Memory workspace" setting names a new or empty folder, the plugin initializes it by itself when its MCP server next starts (Step 3), so `<mindslice_bin> init <workspace>` is only needed to seed it before that, and only on a new or empty folder, never on a folder that already holds other files.

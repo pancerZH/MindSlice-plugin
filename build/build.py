@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the host plugins from the locked upstream MindSlice release.
 
-    python3 build/build.py [--target claude|all] [--check] [--upstream PATH]
+    python3 build/build.py [--target claude|antigravity|all] [--check] [--upstream PATH]
 
 Reads only ``mindslice/``, ``skills/``, ``LICENSE`` and ``NOTICE`` from upstream (at the commit in
 ``build/upstream.lock``: a ``git archive`` of a local checkout given with ``--upstream``, or the GitHub tarball),
@@ -35,7 +35,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 SRC = REPO / "src"
 LOCK = REPO / "build" / "upstream.lock"
-TARGETS = ("claude",)
+TARGETS = ("claude", "antigravity")
 CACHE = REPO / "build" / ".cache"
 MAX_TARGET_BYTES = 256_000  # everything but images (the directory limits images separately)
 IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg")
@@ -44,10 +44,16 @@ ICON_MAX_BYTES = 2_000_000
 sys.path.insert(0, str(SRC / "common"))
 import rules  # noqa: E402
 
-# Top-level paths a plugin directory may contain (anything else is a build bug).
-# No top-level bin/: Chat and Cowork refuse to install a plugin that has one (the launchers live in adapter/).
-OUTPUT_ALLOWED = (".claude-plugin/", ".build-info.json", "README.md", "LICENSE", "NOTICE", "hooks/",
-                  "adapter/", "skills/")
+# Top-level paths a plugin directory may contain, per host (anything else is a build bug).
+# Claude: no top-level bin/, since Chat and Cowork refuse to install a plugin that has one (the launchers live in
+# adapter/). Antigravity: bin/ is what it puts on the agent's PATH; hooks.json, mcp_config.json and rules/ must sit
+# at the plugin root.
+OUTPUT_ALLOWED = {
+    "claude": (".claude-plugin/", ".build-info.json", "README.md", "LICENSE", "NOTICE", "hooks/", "adapter/",
+               "skills/"),
+    "antigravity": ("plugin.json", "mcp_config.json", "hooks.json", "rules/", "bin/", "assets/", ".build-info.json",
+                    "README.md", "LICENSE", "NOTICE", "adapter/", "skills/"),
+}
 LINK_RE = re.compile(r"\]\(([^)\s]+)\)")
 PLACEHOLDER_RE = re.compile(r"\{\{(host|upstream):([A-Za-z0-9_.-]+)\}\}")
 
@@ -292,12 +298,13 @@ class OutFile:
 
 @dataclass
 class Build:
+    allowed: tuple[str, ...] = ()
     files: dict[str, OutFile] = field(default_factory=dict)
 
     def add(self, path: str, data: bytes | str, executable: bool = False) -> None:
         if path in self.files:
             raise BuildError(f"{path} generated twice")
-        if not any(path == p or (p.endswith("/") and path.startswith(p)) for p in OUTPUT_ALLOWED):
+        if not any(path == p or (p.endswith("/") and path.startswith(p)) for p in self.allowed):
             raise BuildError(f"{path} is outside the plugin whitelist")
         self.files[path] = OutFile(data.encode("utf-8") if isinstance(data, str) else data, executable)
 
@@ -317,35 +324,10 @@ def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
 
 
-def build_target(name: str, up: Upstream, lock: dict[str, str]) -> Build:
-    tdir = SRC / "targets" / name
-    cfg = json.loads((tdir / "target.json").read_text(encoding="utf-8"))
-    manifest = json.loads((tdir / "plugin.json").read_text(encoding="utf-8"))
-    version = manifest.get("version", "")
-    if not re.fullmatch(re.escape(lock["version"]) + r"-\d+", version):
-        raise BuildError(f"{name}: plugin version {version!r} must be '{lock['version']}-<revision>'")
-    init = up.text("mindslice/__init__.py")
-    m = re.search(r'^__version__ = "([^"]+)"', init, re.M)
-    if not m or m.group(1) != lock["version"]:
-        raise BuildError(f"upstream __version__ is {m.group(1) if m else None!r}, lock says {lock['version']!r}")
 
-    out = Build()
-    out.add("LICENSE", up.read("LICENSE"))
-    out.add("NOTICE", up.read("NOTICE"))
-
-    # adapter
-    adapter = SRC / "adapter"
-    out.add("adapter/entry.py", (adapter / "entry.py").read_bytes(), executable=True)
-    out.add("adapter/core.py", (adapter / "core.py").read_bytes())
-    out.add("adapter/provision.py", (adapter / "provision.py").read_bytes())
-    out.add("adapter/driver.py", (adapter / "drivers" / f"{cfg['driver']}.py").read_bytes())
-    out.add("adapter/target.json", _json({"target": cfg["target"], "plugin_version": version,
-                                          "engine_version": lock["version"], "page_limit": cfg["page_limit"],
-                                          "hook_slots": cfg["hook_slots"],
-                                          "engine": {"version": lock["version"], "url": lock["wheel"]["url"],
-                                                     "sha256": lock["wheel"]["sha256"]}}))
-
-    # manifest, hooks, shim, readme
+def claude_files(out: Build, tdir: Path, cfg: dict, manifest: dict) -> None:
+    """Claude Code: .claude-plugin/plugin.json (MCP server inside), hooks/hooks.json with one command per slot,
+    the sh launchers adapter/hook-N and adapter/mcp, adapter/mcp.cmd, the directory icon."""
     out.add(cfg["manifest_path"], _json(manifest))
     hooks = [{"type": "command", "command": cfg["hook_command"].replace("{slot}", str(i)),
               "timeout": cfg["hook_timeout"]} for i in range(1, cfg["hook_slots"] + 1)]
@@ -371,6 +353,76 @@ def build_target(name: str, up: Upstream, lock: dict[str, str]) -> Build:
         data = icon.read_bytes()
         check_icon(data, icon)
         out.add(".claude-plugin/icon.png", data)
+
+
+def _sh_launcher(tdir: Path, entry: str, args: str) -> bytes:
+    tpl = "".join(line for line in (tdir / "launcher" / "run.sh").read_text(encoding="utf-8").splitlines(True)
+                  if not line.startswith("##"))
+    return tpl.replace("@ENTRY@", entry).replace("@ARGS@", args).encode()
+
+
+def _cmd_launcher(tdir: Path, entry: str, args: str) -> bytes:
+    tpl = (tdir / "launcher" / "run.cmd").read_bytes()
+    if b"\n" in tpl.replace(b"\r\n", b""):
+        raise BuildError(f"{tdir / 'launcher' / 'run.cmd'} must use CRLF line endings (cmd.exe labels break otherwise)")
+    tpl = b"".join(line for line in tpl.splitlines(True) if not line.startswith(b"::"))
+    return tpl.replace(b"@ENTRY@", entry.encode()).replace(b"@ARGS@", args.encode())
+
+
+def antigravity_files(out: Build, tdir: Path, cfg: dict, manifest: dict) -> None:
+    """Antigravity: plugin.json, mcp_config.json and hooks.json at the plugin root (it loads them nowhere else),
+    rules/AGENTS.md (always on), bin/mindslice for the agent's PATH, adapter/hook.py and the MCP launchers."""
+    out.add(cfg["manifest_path"], _json(manifest))
+    mcp = json.loads((tdir / "mcp_config.json").read_text(encoding="utf-8"))
+    out.add("mcp_config.json", _json(mcp))
+    out.add("hooks.json", _json({"mindslice": {cfg["hook_event"]: [
+        {"type": "command", "command": cfg["hook_command"], "timeout": cfg["hook_timeout"]}]}}))
+    out.add("adapter/hook.py", (tdir / "hook.py").read_bytes())
+    out.add("adapter/mcp", _sh_launcher(tdir, "entry.py", "mcp"), executable=True)
+    out.add("adapter/mcp.cmd", _cmd_launcher(tdir, "entry.py", "mcp"))
+    out.add("bin/mindslice", _sh_launcher(tdir, "../adapter/entry.py", '"$@"'), executable=True)
+    out.add("bin/mindslice.cmd", _cmd_launcher(tdir, "..\\adapter\\entry.py", "%*"))
+    out.add("rules/AGENTS.md", (tdir / "rules" / "AGENTS.md").read_bytes())
+    out.add("README.md", (tdir / "README.md").read_bytes())
+    logo = manifest.get("logo")
+    if logo:
+        data = (tdir / "logo.png").read_bytes()
+        check_icon(data, tdir / "logo.png")
+        out.add(logo, data)
+
+
+HOSTS = {"claude": claude_files, "antigravity": antigravity_files}
+
+
+def build_target(name: str, up: Upstream, lock: dict[str, str]) -> Build:
+    tdir = SRC / "targets" / name
+    cfg = json.loads((tdir / "target.json").read_text(encoding="utf-8"))
+    manifest = json.loads((tdir / "plugin.json").read_text(encoding="utf-8"))
+    version = manifest.get("version", "")
+    if not re.fullmatch(re.escape(lock["version"]) + r"-\d+", version):
+        raise BuildError(f"{name}: plugin version {version!r} must be '{lock['version']}-<revision>'")
+    init = up.text("mindslice/__init__.py")
+    m = re.search(r'^__version__ = "([^"]+)"', init, re.M)
+    if not m or m.group(1) != lock["version"]:
+        raise BuildError(f"upstream __version__ is {m.group(1) if m else None!r}, lock says {lock['version']!r}")
+
+    out = Build(OUTPUT_ALLOWED[cfg.get("host", "claude")])
+    out.add("LICENSE", up.read("LICENSE"))
+    out.add("NOTICE", up.read("NOTICE"))
+
+    # adapter
+    adapter = SRC / "adapter"
+    out.add("adapter/entry.py", (adapter / "entry.py").read_bytes(), executable=True)
+    out.add("adapter/core.py", (adapter / "core.py").read_bytes())
+    out.add("adapter/provision.py", (adapter / "provision.py").read_bytes())
+    out.add("adapter/driver.py", (adapter / "drivers" / f"{cfg['driver']}.py").read_bytes())
+    out.add("adapter/target.json", _json({"target": cfg["target"], "plugin_version": version,
+                                          "engine_version": lock["version"], "page_limit": cfg["page_limit"],
+                                          "hook_slots": cfg["hook_slots"],
+                                          "engine": {"version": lock["version"], "url": lock["wheel"]["url"],
+                                                     "sha256": lock["wheel"]["sha256"]}}))
+
+    HOSTS[cfg.get("host", "claude")](out, tdir, cfg, manifest)
 
     # skills
     skills = cfg["skills"]

@@ -1,0 +1,11 @@
+{
+  "mindslice": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "python3 adapter/hook.py || py adapter/hook.py",
+        "timeout": 60
+      }
+    ]
+  }
+}

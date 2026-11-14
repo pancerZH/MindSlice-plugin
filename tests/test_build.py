@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 
 import helpers
-from helpers import PLUGIN, REPO
+from helpers import CLAUDE, PLUGIN, REPO, TARGET, only
 
 import core
 
@@ -86,14 +86,19 @@ class OutputTest(unittest.TestCase):
     def test_whitelist_and_size(self) -> None:
         files = self.files()
         for f in files:
-            self.assertTrue(any(f == p or (p.endswith("/") and f.startswith(p)) for p in build.OUTPUT_ALLOWED), f)
+            allowed = build.OUTPUT_ALLOWED[helpers.target_config_src().get("host", "claude")]
+            self.assertTrue(any(f == p or (p.endswith("/") and f.startswith(p)) for p in allowed), f)
             self.assertFalse(f.startswith(("tests/", "evals/", "docs/", ".github/", "src/", "build/")), f)
         self.assertNotIn("adapter/drivers", "\n".join(files))
         self.assertFalse(any(f.startswith("engine/") or "/mindslice/" in f for f in files), "engine is not shipped")
         total = sum((PLUGIN / f).stat().st_size for f in files if not f.lower().endswith(build.IMAGE_SUFFIXES))
         self.assertLessEqual(total, build.MAX_TARGET_BYTES)
-        for f in ("adapter/entry.py", "adapter/core.py", "adapter/driver.py", "adapter/provision.py", "adapter/mcp", "adapter/mcp.cmd", "hooks/hooks.json",
-                  ".claude-plugin/plugin.json", "LICENSE", "NOTICE", "skills/setup/SKILL.md", "skills/review/SKILL.md"):
+        for f in ("adapter/entry.py", "adapter/core.py", "adapter/driver.py", "adapter/provision.py", "adapter/mcp",
+                  "adapter/mcp.cmd", "LICENSE", "NOTICE", "skills/setup/SKILL.md", "skills/review/SKILL.md"):
+            self.assertIn(f, files)
+        if not CLAUDE:
+            return  # the rest is Claude's layout; Antigravity's is checked in test_antigravity
+        for f in ("hooks/hooks.json", ".claude-plugin/plugin.json"):
             self.assertIn(f, files)
         if os.name != "nt":
             self.assertTrue(os.access(PLUGIN / "adapter" / "mcp", os.X_OK))  # Claude runs it directly
@@ -110,6 +115,7 @@ class OutputTest(unittest.TestCase):
         for path, digest in info["files"].items():
             self.assertEqual(hashlib.sha256((PLUGIN / path).read_bytes()).hexdigest(), digest, path)
 
+    @only("claude")
     def test_launch_commands(self) -> None:
         manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())
         mcp = manifest["mcpServers"]["mindslice"]
@@ -121,6 +127,7 @@ class OutputTest(unittest.TestCase):
         for i, h in enumerate(hooks, 1):
             self.assertEqual(h["command"], f'sh "${{CLAUDE_PLUGIN_ROOT}}/adapter/hook-{i}"')
 
+    @only("claude")
     def test_manifest_version(self) -> None:
         manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())
         self.assertTrue(manifest["version"].startswith(LOCK["version"] + "-"))
@@ -268,6 +275,7 @@ class BuildCheckTest(unittest.TestCase):
         with self.assertRaises(build.BuildError):
             build.check_links(files)
 
+    @only("claude")
     def test_claude_validate(self) -> None:
         claude = shutil.which("claude")
         if not claude:

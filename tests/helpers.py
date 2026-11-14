@@ -16,6 +16,30 @@ TARGET = os.environ.get("MINDSLICE_PLUGIN_TARGET", "claude")
 PLUGIN = REPO / "plugins" / TARGET
 ENTRY = PLUGIN / "adapter" / "entry.py"
 WINDOWS = os.name == "nt"
+CLAUDE = TARGET == "claude"
+# What the host sets for hooks and the MCP server: the plugin's data directory and its root.
+DATA_ENV, ROOT_ENV = ("CLAUDE_PLUGIN_DATA", "CLAUDE_PLUGIN_ROOT") if CLAUDE else ("PLUGIN_DATA", "PLUGIN_ROOT")
+
+
+def only(target: str):
+    """Skip a test (or class) unless the suite runs against ``target`` (MINDSLICE_PLUGIN_TARGET)."""
+    return unittest.skipUnless(TARGET == target, f"{target} plugin only")
+
+
+def target_config() -> dict:
+    import json
+
+    return json.loads((PLUGIN / "adapter" / "target.json").read_text())
+
+
+def target_config_src() -> dict:
+    """The target's source settings (src/targets/<target>/target.json)."""
+    import json
+
+    return json.loads((REPO / "src" / "targets" / TARGET / "target.json").read_text())
+
+
+MAX_PAGES = target_config()["hook_slots"]  # pages one session start delivers (Claude: one per hook slot)
 
 if str(PLUGIN / "adapter") not in sys.path:
     sys.path.insert(0, str(PLUGIN / "adapter"))
@@ -44,7 +68,8 @@ sys.path.insert(0, str(ENGINE))
 
 # Variables that would point a test at the developer's real memory.
 SCRUB = ("MINDSLICE_PLUGIN_WHEEL", "MINDSLICE_PLUGIN_PYTHON", "CLAUDE_PLUGIN_OPTION_PYTHON", "MINDSLICE_PLUGIN_OPTION_WORKSPACE", "CLAUDE_PLUGIN_ROOT", "MINDSLICE_WORKSPACE", "MINDSLICE_PLUGIN_WORKSPACE", "MINDSLICE_PLUGIN_ISOLATE", "CLAUDE_PLUGIN_OPTION_WORKSPACE",
-         "CLAUDE_PLUGIN_DATA", "CLAUDE_ENV_FILE", "MINDSLICE_PLUGIN_STAGE_WRITES", "CLAUDE_PLUGIN_OPTION_STAGE_WRITES")
+         "CLAUDE_PLUGIN_DATA", "CLAUDE_ENV_FILE", "MINDSLICE_PLUGIN_STAGE_WRITES", "CLAUDE_PLUGIN_OPTION_STAGE_WRITES",
+         "PLUGIN_DATA", "PLUGIN_ROOT", "MINDSLICE_PLUGIN_DATA", "ANTIGRAVITY_APP_DATA_DIR")
 
 
 class PluginTestCase(unittest.TestCase):
@@ -56,10 +81,10 @@ class PluginTestCase(unittest.TestCase):
         self._env = dict(os.environ)
         for k in SCRUB:
             os.environ.pop(k, None)
-        os.environ["CLAUDE_PLUGIN_DATA"] = str(self.tmp / "data")
+        os.environ[DATA_ENV] = str(self.tmp / "data")
         os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
         os.environ["MINDSLICE_PLUGIN_ENGINE_DIR"] = str(ENGINE)  # subprocesses: no download per test
-        os.environ["CLAUDE_PLUGIN_ROOT"] = str(PLUGIN)  # as Claude sets it for hooks and the MCP server
+        os.environ[ROOT_ENV] = str(PLUGIN)  # as the host sets it for hooks and the MCP server
         if not WINDOWS:  # the launchers run python3 from PATH: make that the interpreter under test
             pybin = self.tmp / "pybin"
             pybin.mkdir()
@@ -72,18 +97,46 @@ class PluginTestCase(unittest.TestCase):
         self._tmp.cleanup()
 
     def shim(self) -> list[str]:
-        """How the Bash tool and a user's terminal run the plugin CLI: the launcher slot 1 writes to
-        <plugin data>/bin (mindslice.cmd from cmd/PowerShell on Windows)."""
+        """How the agent's shell tool and a user's terminal run the plugin CLI. Claude: the launcher slot 1 writes
+        to <plugin data>/bin. Antigravity: the plugin's own bin/ (mindslice.cmd from cmd/PowerShell on Windows)."""
         import driver
 
-        d = driver.write_launchers()
+        d = driver.write_launchers() if CLAUDE else driver.launcher_dir()
         return [str(d / ("mindslice.cmd" if WINDOWS else "mindslice"))]
 
     def configure(self, workspace: Path | str | None) -> None:
+        """Set the plugin's workspace option as the host passes it on. Claude gives it to hooks. Antigravity gives
+        it only to the MCP server, which records it in the bridge file the hook reads: write that record too."""
+        if CLAUDE:
+            if workspace is None:
+                os.environ.pop("CLAUDE_PLUGIN_OPTION_WORKSPACE", None)
+            else:
+                os.environ["CLAUDE_PLUGIN_OPTION_WORKSPACE"] = str(workspace)
+            return
+        import core
+
         if workspace is None:
-            os.environ.pop("CLAUDE_PLUGIN_OPTION_WORKSPACE", None)
+            os.environ.pop("MINDSLICE_PLUGIN_OPTION_WORKSPACE", None)
+            core.bridge_path().unlink(missing_ok=True)
         else:
-            os.environ["CLAUDE_PLUGIN_OPTION_WORKSPACE"] = str(workspace)
+            os.environ["MINDSLICE_PLUGIN_OPTION_WORKSPACE"] = str(workspace)
+            core.write_bridge(Path(os.path.abspath(core.expand_home(str(workspace)))))
+
+    def hook(self, slot: int = 1, session: str = "s1", **kw) -> subprocess.CompletedProcess:
+        """Run the session-start hook as the host does; ``stdout`` is the text of page ``slot`` ("" if none).
+        Claude runs one process per slot; Antigravity runs adapter/hook.py once and gets every page as JSON."""
+        import json
+
+        if CLAUDE:
+            return self.run_entry("hook", str(slot), stdin=json.dumps({"session_id": session, "source": "startup"}),
+                                  **kw)
+        r = self.run_entry(stdin=json.dumps({"conversationId": session, "hookEventName": "SessionStart"}),
+                           cmd=[sys.executable, str(PLUGIN / "adapter" / "hook.py")], **kw)
+        out = json.loads(r.stdout)
+        pages = [s["systemMessage"]["systemMessage"] for s in out.get("injectSteps", [])]
+        r.pages = pages  # type: ignore[attr-defined]
+        r.stdout = pages[slot - 1] if slot <= len(pages) else ""
+        return r
 
     def run_entry(self, *args: str, stdin: str = "", cwd: Path | None = None,
                   env: dict[str, str] | None = None, cmd: list[str] | None = None) -> subprocess.CompletedProcess:

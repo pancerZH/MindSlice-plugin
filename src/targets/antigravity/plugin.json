@@ -1,0 +1,17 @@
+{
+  "name": "mindslice",
+  "displayName": "MindSlice",
+  "version": "0.1.6-1",
+  "description": "Portable long-term memory: isolated Markdown slices, standing memory in every conversation, controlled evolution.",
+  "author": {
+    "name": "pancerZH"
+  },
+  "homepage": "https://github.com/pancerZH/MindSlice",
+  "repository": "https://github.com/pancerZH/MindSlice-plugin",
+  "logo": "assets/logo.png",
+  "suggestedPrompts": [
+    "Set up my MindSlice memory",
+    "Remember that I prefer concise answers in English",
+    "Review the memory changes waiting for my approval"
+  ]
+}

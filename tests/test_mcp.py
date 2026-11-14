@@ -7,7 +7,7 @@ import os
 import unittest
 
 import helpers  # noqa: F401
-from helpers import PLUGIN, WINDOWS, PluginTestCase, write_always
+from helpers import PLUGIN, WINDOWS, PluginTestCase, only, write_always
 
 import core
 from mindslice import Workspace
@@ -88,6 +88,7 @@ class MCPTest(PluginTestCase):
             r = call(s, "write", {"id": "t/x", "summary": "s", "content": "- y", "reason": "t", "stage": False})
             self.assertTrue(r.get("staged") or "staging" in json.dumps(r), r)
 
+    @only("claude")  # Antigravity: test_antigravity.ManifestTest
     def test_mcp_as_the_manifest_starts_it(self) -> None:
         # plugin.json: command ${CLAUDE_PLUGIN_ROOT}/adapter/mcp (mcp.cmd on Windows), no arguments,
         # the workspace option in the environment

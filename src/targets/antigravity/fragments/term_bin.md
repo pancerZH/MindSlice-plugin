@@ -1,0 +1,1 @@
+`mindslice`, which the plugin puts on the PATH of Antigravity's terminal tool (it is not on the user's own terminal `PATH`; `command -v mindslice` there prints its absolute path, inside the plugin folder). Without `-w` it uses the plugin's workspace, unless the current directory is inside another MindSlice workspace.

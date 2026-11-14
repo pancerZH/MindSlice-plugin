@@ -1,0 +1,19 @@
+#!/bin/sh
+# MindSlice plugin launcher: runs the plugin's entry.py with the first Python on PATH (entry.py itself switches
+# to Python 3.12+ when this one is older).
+self=$0
+while [ -L "$self" ]; do
+  link=$(readlink "$self")
+  case $link in
+    /*) self=$link ;;
+    *) self=$(dirname "$self")/$link ;;
+  esac
+done
+here=$(CDPATH= cd -- "$(dirname -- "$self")" && pwd)
+for py in python3 python; do
+  if command -v "$py" >/dev/null 2>&1; then
+    exec "$py" "$here/entry.py" mcp
+  fi
+done
+echo "mindslice plugin: Python 3.12 or newer is required" >&2
+exit 1

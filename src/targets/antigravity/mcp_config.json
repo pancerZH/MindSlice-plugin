@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "mindslice": {
+      "command": "./adapter/mcp",
+      "cwd": "${PLUGIN_ROOT}",
+      "env": {
+        "MINDSLICE_PLUGIN_OPTION_WORKSPACE": "${workspace}",
+        "MINDSLICE_PLUGIN_STAGE_WRITES": "${stage_writes}"
+      },
+      "variables": [
+        {
+          "name": "workspace",
+          "title": "Memory workspace",
+          "description": "Absolute path of the folder that holds your memory. An existing MindSlice workspace is used as is; a new or empty folder is initialized; a folder with other files is refused."
+        },
+        {
+          "name": "stage_writes",
+          "title": "Review every write",
+          "description": "true: every change the agent makes waits in staging for your approval (recommended for small local models). false: only changes to always-loaded memory wait."
+        }
+      ]
+    }
+  }
+}

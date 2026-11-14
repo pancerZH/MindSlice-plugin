@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import helpers
-from helpers import ENTRY, PLUGIN, WINDOWS, PluginTestCase, snapshot_files, write_always
+from helpers import CLAUDE, DATA_ENV, ENTRY, MAX_PAGES, PLUGIN, ROOT_ENV, WINDOWS, PluginTestCase, only, snapshot_files, write_always
 
 import shutil
 
@@ -23,9 +23,7 @@ HEADER_RE = re.compile(r"^\[MindSlice standing memory · page (\d+)/(\d+) · sna
 
 
 class HookTest(PluginTestCase):
-    def hook(self, slot: int, session: str = "s1", **kw) -> subprocess.CompletedProcess:
-        return self.run_entry("hook", str(slot), stdin=json.dumps({"session_id": session, "source": "startup"}), **kw)
-
+    @only("claude")
     def test_unconfigured(self) -> None:
         env_file = self.tmp / "env.sh"
         env_file.write_text("")
@@ -39,6 +37,7 @@ class HookTest(PluginTestCase):
         self.assertNotIn("MINDSLICE_PLUGIN_WORKSPACE", text)
         self.assertTrue((core.plugin_data_dir() / "bin" / "mindslice").is_file())
 
+    @only("claude")
     def test_leftover_bridge_does_not_count_as_configured(self) -> None:
         # uninstall clears the options but not the data dir: hooks must report "not configured", not old memory
         old = self.tmp / "old-ws"
@@ -148,6 +147,7 @@ class HookTest(PluginTestCase):
         self.assertIn("not empty and is not a MindSlice workspace", self.hook(1, session="f").stdout)
         self.assertEqual(plain.read_text(), "x")
 
+    @only("claude")
     def test_env_file_export(self) -> None:
         ws = self.tmp / "my ws"
         self.configure(ws)
@@ -164,6 +164,7 @@ class HookTest(PluginTestCase):
         data_line = next(line for line in text.splitlines() if line.startswith("export MINDSLICE_PLUGIN_DATA="))
         self.assertNotIn("\\", data_line)  # forward slashes for Git Bash
 
+    @only("claude")
     @unittest.skipIf(WINDOWS, "POSIX shell")
     def test_bash_tool_gets_mindslice_on_path(self) -> None:
         # what Claude does with the env file: run it as shell code before each Bash command (W4)
@@ -185,6 +186,7 @@ class HookTest(PluginTestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn(str(ws), r.stdout)  # the CLI used the plugin workspace
 
+    @only("claude")
     def test_launcher_follows_the_installed_version(self) -> None:
         import driver
 
@@ -196,6 +198,7 @@ class HookTest(PluginTestCase):
         driver.write_launchers()  # unchanged: not rewritten
         self.assertEqual((d / "mindslice").stat().st_mtime_ns, mtime)
 
+    @only("claude")
     def test_path_entry_on_windows(self) -> None:
         from unittest import mock
 
@@ -205,6 +208,7 @@ class HookTest(PluginTestCase):
             self.assertEqual(driver.path_entry(Path("C:/Users/Wenzhe Zhang/.claude/plugins/data/x/bin")),
                              "/c/Users/Wenzhe Zhang/.claude/plugins/data/x/bin")
 
+    @only("claude")
     @unittest.skipUnless(shutil.which("sh"), "no sh")
     def test_hook_through_the_sh_launcher(self) -> None:
         # exactly what hooks.json runs: sh <plugin>/adapter/hook-<slot>
@@ -213,6 +217,7 @@ class HookTest(PluginTestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue(r.stdout.startswith("[MindSlice standing memory · page 1/1"), r.stdout[:200])
 
+    @only("claude")
     def test_concurrent_slots_share_a_snapshot_and_refresh(self) -> None:
         ws = self.tmp / "ws"
         self.configure(ws)
@@ -244,13 +249,14 @@ class HookTest(PluginTestCase):
         ws = self.tmp / "ws"
         self.configure(ws)
         core.ensure_workspace(core.resolve("hook"))
-        for i in range(12):
+        cfg = helpers.target_config()
+        for i in range(-(-cfg["hook_slots"] * cfg["page_limit"] // 8000) + 2):
             write_always(ws, f"big/b{i}", "- " + ("长规则 " * 2200))
-        last = self.hook(4, session="ovf")
+        last = self.hook(MAX_PAGES, session="ovf")
         self.assertIn("# Standing memory overflow", last.stdout)
         status = self.run_entry("plugin-status", cmd=self.shim())
         self.assertEqual(status.returncode, 1)
-        self.assertIn("pages but only 4 are delivered", status.stdout)
+        self.assertIn(f"pages but only {MAX_PAGES} are delivered", status.stdout)
 
     def test_plugin_status_after_global_options(self) -> None:
         ws = self.tmp / "plugin-status"  # a path that looks like the subcommand must not confuse routing
@@ -276,6 +282,7 @@ class HookTest(PluginTestCase):
 
 
 class CliRoutingTest(PluginTestCase):
+    @only("claude")
     def test_bash_tool_uses_the_exported_data_dir(self) -> None:
         # the Bash tool has no CLAUDE_PLUGIN_DATA, only what slot 1 exported
         ws = self.tmp / "ws"
@@ -343,14 +350,16 @@ class CliRoutingTest(PluginTestCase):
         # the Bash tool and the user's terminal: no CLAUDE_PLUGIN_ROOT, no CLAUDE_PLUGIN_DATA
         import driver
 
-        d = driver.write_launchers()
+        d = driver.write_launchers() if CLAUDE else driver.launcher_dir()
         launcher = d / ("mindslice.cmd" if WINDOWS else "mindslice")
-        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_PLUGIN_ROOT", "CLAUDE_PLUGIN_DATA")}
+        env = {k: v for k, v in os.environ.items() if k not in (ROOT_ENV, DATA_ENV)}
+        env["HOME"] = env["USERPROFILE"] = str(self.tmp)
         r = subprocess.run([str(launcher), "--version"], capture_output=True, text=True, env=env, timeout=120)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("mindslice 0.", r.stdout)
 
 
+@only("claude")
 class ShimTest(PluginTestCase):
     """adapter/hook-N and adapter/mcp: ${CLAUDE_PLUGIN_ROOT}/adapter/entry.py with fixed arguments and a fixed
     interpreter name (py, python3, python)."""
@@ -442,10 +451,13 @@ class IsolationTest(PluginTestCase):
         env = {"MINDSLICE_PLUGIN_ISOLATE": "1"}
         env_file = self.tmp / "env.sh"
         env_file.write_text("")
-        hook = self.run_entry("hook", "1", stdin="{}", env=dict(env, CLAUDE_ENV_FILE=str(env_file)))
+        hook = self.hook(1, env=dict(env, CLAUDE_ENV_FILE=str(env_file)))
         self.assertEqual((hook.returncode, hook.stdout), (0, ""))
-        self.assertIn("export PATH=", env_file.read_text())  # Forge still calls `mindslice -w ...`
-        self.assertNotIn("MINDSLICE_PLUGIN_WORKSPACE", env_file.read_text())
+        if CLAUDE:
+            self.assertIn("export PATH=", env_file.read_text())  # Forge still calls `mindslice -w ...`
+            self.assertNotIn("MINDSLICE_PLUGIN_WORKSPACE", env_file.read_text())
+        else:
+            self.assertEqual(hook.pages, [])
         reqs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
                 {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}]
         mcp = self.run_entry("mcp", "--workspace", str(ws), stdin="".join(json.dumps(r) + "\n" for r in reqs), env=env)
