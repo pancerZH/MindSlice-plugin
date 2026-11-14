@@ -1,0 +1,30 @@
+{
+  "target": "claude",
+  "plugin_version": "0.1.6-1",
+  "upstream": {
+    "repo": "https://github.com/pancerZH/MindSlice",
+    "commit": "e2b85ad0df537fa862ec555f3ba5c43c59554b44",
+    "version": "0.1.6",
+    "wheel": {
+      "url": "https://files.pythonhosted.org/packages/a6/2d/f2846bc07a198feefd39e149429da9fd4fb5adab0d25de93985080bea807/mindslice-0.1.6-py3-none-any.whl",
+      "sha256": "a066ecb2783b1ef770f38aa95327a46d4cb3142b5d78c4d3089e45a30beee0be"
+    }
+  },
+  "files": {
+    ".claude-plugin/plugin.json": "6e5f57e3b2e9d10a8fe3063fac4e645d93a3415cbe80d40cb3bc8fc5086c5145",
+    "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "NOTICE": "c59a0c528eef8df48a71b5359c4c356ed5f1ef5283a01a7cc837e59464fd1fbf",
+    "README.md": "f5f810f7bc57a6eee21da671695af228582666638025f0dd100c4ba6d79de0bb",
+    "adapter/core.py": "7a156eb3853708a8e8bbd84e300a6d57c5f7c218e2fd425c5997778c900123e0",
+    "adapter/driver.py": "babadc686c1e8633533c7ce9281dc1e0f0aa7408a41a694f35a5c5af3085ae70",
+    "adapter/entry.py": "4774593a355d4dfbe19527c6a90609f4c67da868c555a2678e89683e40b0d923",
+    "adapter/provision.py": "ceb565681c075aba247c842cba2bc1f1fe7ff7b0d7e48495c9ddb54429dcea9e",
+    "adapter/target.json": "051aa952d5cf1496063103156373cd813cbebf6eecd99bb9ed24c49359351462",
+    "bin/mindslice": "b9fbc14934dad3e26fc20ca93f4248fda86f368aed51425ba51a9d8f41fdb861",
+    "hooks/hooks.json": "aa2bc259cf57b9ce12d850d4695f56f9bc275e6b9871f421d803170e972d3e38",
+    "skills/review/SKILL.md": "2d4d7fc5f14a4800806ae681049c3ecc8601b11b96bdb627ac40550d327d8a71",
+    "skills/setup/SKILL.md": "6da84c3ae8754488ae390dfa7b3aa072acaecf37e9ffb24c392a76a818bd9e9a",
+    "skills/setup/uninstall.md": "f91c5b04a833023af9507fa50a0ac02f14dee1e6dfb635df5e3a358c132799a1",
+    "skills/slice-maintainer/SKILL.md": "bdc712e112aee8eef3fda68e1364a77b31dd1fe66d106cf9999e69a64ca70c4c"
+  }
+}

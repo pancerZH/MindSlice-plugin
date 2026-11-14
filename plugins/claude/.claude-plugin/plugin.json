@@ -1,0 +1,45 @@
+{
+  "name": "mindslice",
+  "version": "0.1.6-1",
+  "description": "Portable long-term memory: isolated Markdown slices, standing memory in every session, controlled evolution.",
+  "author": {
+    "name": "pancerZH"
+  },
+  "homepage": "https://github.com/pancerZH/MindSlice",
+  "repository": "https://github.com/pancerZH/MindSlice-plugin",
+  "license": "Apache-2.0",
+  "keywords": [
+    "memory",
+    "long-term memory",
+    "mcp",
+    "markdown"
+  ],
+  "userConfig": {
+    "workspace": {
+      "type": "directory",
+      "required": true,
+      "title": "Memory workspace",
+      "description": "Folder that holds your memory. An existing MindSlice workspace is used as is; a new or empty folder is initialized."
+    },
+    "stage_writes": {
+      "type": "boolean",
+      "default": false,
+      "title": "Review every write",
+      "description": "Send every change the agent makes to staging for your approval (recommended for small local models)."
+    }
+  },
+  "mcpServers": {
+    "mindslice": {
+      "command": "python3",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/adapter/entry.py",
+        "mcp",
+        "--workspace",
+        "${user_config.workspace}"
+      ],
+      "env": {
+        "MINDSLICE_PLUGIN_STAGE_WRITES": "${user_config.stage_writes}"
+      }
+    }
+  }
+}

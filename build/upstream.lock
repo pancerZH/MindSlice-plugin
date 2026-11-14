@@ -1,0 +1,9 @@
+{
+  "repo": "https://github.com/pancerZH/MindSlice",
+  "commit": "e2b85ad0df537fa862ec555f3ba5c43c59554b44",
+  "version": "0.1.6",
+  "wheel": {
+    "url": "https://files.pythonhosted.org/packages/a6/2d/f2846bc07a198feefd39e149429da9fd4fb5adab0d25de93985080bea807/mindslice-0.1.6-py3-none-any.whl",
+    "sha256": "a066ecb2783b1ef770f38aa95327a46d4cb3142b5d78c4d3089e45a30beee0be"
+  }
+}

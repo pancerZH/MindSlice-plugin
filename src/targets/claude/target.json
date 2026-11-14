@@ -1,0 +1,17 @@
+{
+  "target": "claude",
+  "driver": "claude",
+  "output": "plugins/claude",
+  "manifest_path": ".claude-plugin/plugin.json",
+  "page_limit": 9500,
+  "hook_slots": 4,
+  "hook_event": "SessionStart",
+  "hook_command": "python3 \"${CLAUDE_PLUGIN_ROOT}/adapter/entry.py\" hook {slot}",
+  "hook_timeout": 30,
+  "skills": {
+    "setup": true,
+    "review": true,
+    "slice-maintainer": true,
+    "slice-builder": false
+  }
+}

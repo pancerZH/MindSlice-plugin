@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Locked upstream commit
+        id: lock
+        run: python3 -c "import json; print('commit=' + json.load(open('build/upstream.lock'))['commit'])" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: pancerZH/MindSlice
+          ref: ${{ steps.lock.outputs.commit }}
+          path: .upstream
+          fetch-depth: 0
+      - name: Generated plugins are up to date
+        run: python3 build/build.py --check --upstream .upstream
+      - name: Tests
+        env:
+          MINDSLICE_UPSTREAM: .upstream
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 -m unittest discover -s tests -t tests -v

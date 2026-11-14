@@ -1,0 +1,31 @@
+{
+  "description": "MindSlice: deliver the standing memory at session start, resume, clear and compaction (one page per command, all from one snapshot).",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/adapter/entry.py\" hook 1",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/adapter/entry.py\" hook 2",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/adapter/entry.py\" hook 3",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/adapter/entry.py\" hook 4",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

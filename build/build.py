@@ -1,0 +1,473 @@
+#!/usr/bin/env python3
+"""Build the host plugins from the locked upstream MindSlice release.
+
+    python3 build/build.py [--target claude|all] [--check] [--upstream PATH]
+
+Reads only ``mindslice/``, ``skills/``, ``LICENSE`` and ``NOTICE`` from upstream (at the commit in
+``build/upstream.lock``: a ``git archive`` of a local checkout given with ``--upstream``, or the GitHub tarball),
+plus ``src/``, and writes ``plugins/<target>/``. The engine is not copied: the plugin installs the PyPI wheel
+pinned in the lock at first use. The build checks that this wheel has the lock's sha256 and that its
+``mindslice/`` package is byte-identical to the locked commit, so the skills and the engine always agree. ``--check`` rebuilds into a temporary directory and fails if
+the committed ``plugins/<target>/`` differs in any byte or executable bit.
+
+Every selection and rewrite rule must match, and every relative Markdown link must resolve, or the build fails.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import io
+import zipfile
+import json
+import os
+import posixpath
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import urllib.request
+from dataclasses import dataclass, field
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+SRC = REPO / "src"
+LOCK = REPO / "build" / "upstream.lock"
+TARGETS = ("claude",)
+CACHE = REPO / "build" / ".cache"
+MAX_TARGET_BYTES = 256_000
+
+sys.path.insert(0, str(SRC / "common"))
+import rules  # noqa: E402
+
+# Top-level paths a plugin directory may contain (anything else is a build bug).
+OUTPUT_ALLOWED = (".claude-plugin/", ".build-info.json", "README.md", "LICENSE", "NOTICE", "hooks/", "bin/",
+                  "adapter/", "skills/")
+LINK_RE = re.compile(r"\]\(([^)\s]+)\)")
+PLACEHOLDER_RE = re.compile(r"\{\{(host|upstream):([A-Za-z0-9_.-]+)\}\}")
+
+
+class BuildError(Exception):
+    pass
+
+
+# ---------------------------------------------------------------------------
+# upstream
+# ---------------------------------------------------------------------------
+def _allowed(path: str) -> bool:
+    return any(path == p or (p.endswith("/") and path.startswith(p)) for p in rules.UPSTREAM_ALLOWED)
+
+
+class Upstream:
+    """The whitelisted part of the upstream tree at the locked commit (names of the rest, for link checks)."""
+
+    def __init__(self, files: dict[str, bytes], names: set[str], repo: str, commit: str) -> None:
+        self.files = files
+        self.names = names
+        self.repo = repo.removesuffix(".git").rstrip("/")
+        self.commit = commit
+
+    @classmethod
+    def from_tar(cls, data: bytes, repo: str, commit: str, strip_top: bool) -> "Upstream":
+        files: dict[str, bytes] = {}
+        names: set[str] = set()
+        with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+            for member in tar.getmembers():
+                name = member.name
+                if strip_top:
+                    name = name.split("/", 1)[1] if "/" in name else ""
+                if not name or not member.isfile():
+                    continue
+                names.add(name)
+                if _allowed(name):
+                    fh = tar.extractfile(member)
+                    assert fh is not None
+                    files[name] = fh.read()
+        return cls(files, names, repo, commit)
+
+    @classmethod
+    def load(cls, lock: dict[str, str], local: Path | None) -> "Upstream":
+        commit = lock["commit"]
+        if local is not None:
+            try:
+                data = subprocess.run(["git", "-C", str(local), "archive", "--format=tar", commit],
+                                      check=True, capture_output=True).stdout
+            except (OSError, subprocess.CalledProcessError) as exc:
+                raise BuildError(f"cannot archive {commit} from {local}: {exc}") from None
+            return cls.from_tar(data, lock["repo"], commit, strip_top=False)
+        m = re.match(r"https://github\.com/([^/]+/[^/]+?)(?:\.git)?/?$", lock["repo"])
+        if not m:
+            raise BuildError(f"cannot download {lock['repo']}: pass --upstream PATH")
+        url = f"https://codeload.github.com/{m.group(1)}/tar.gz/{commit}"
+        try:
+            with urllib.request.urlopen(url, timeout=60) as resp:
+                data = resp.read()
+        except OSError as exc:
+            raise BuildError(f"cannot download {url}: {exc} (or pass --upstream PATH)") from None
+        return cls.from_tar(data, lock["repo"], commit, strip_top=True)
+
+    def read(self, path: str) -> bytes:
+        if not _allowed(path):
+            raise BuildError(f"build may not read upstream path {path!r}")
+        if path not in self.files:
+            raise BuildError(f"upstream has no {path!r} at {self.commit}")
+        return self.files[path]
+
+    def text(self, path: str) -> str:
+        return self.read(path).decode("utf-8")
+
+    def listdir(self, prefix: str) -> list[str]:
+        return sorted(p for p in self.files if p.startswith(prefix))
+
+    def blob_url(self, path: str) -> str:
+        return f"{self.repo}/blob/{self.commit}/{path}"
+
+
+def load_wheel(lock: dict, local: Path | None) -> bytes:
+    """The pinned wheel (a local file, the build cache or PyPI), checked against the lock's sha256."""
+    spec = lock["wheel"]
+    name = spec["url"].rsplit("/", 1)[-1]
+    cached = CACHE / name
+    if local is not None:
+        data = local.read_bytes()
+    elif cached.is_file():
+        data = cached.read_bytes()
+    else:
+        try:
+            with urllib.request.urlopen(spec["url"], timeout=60) as resp:
+                data = resp.read()
+        except OSError as exc:
+            raise BuildError(f"cannot download {spec['url']}: {exc} (or pass --wheel PATH)") from None
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != spec["sha256"]:
+        raise BuildError(f"wheel {name} has sha256 {digest}, the lock says {spec['sha256']}")
+    if local is None and not cached.is_file():
+        CACHE.mkdir(parents=True, exist_ok=True)
+        cached.write_bytes(data)
+    return data
+
+
+def check_wheel(data: bytes, up: "Upstream", version: str) -> None:
+    """The wheel's engine package must be the locked commit's ``mindslice/`` package, byte for byte."""
+    with zipfile.ZipFile(io.BytesIO(data)) as wheel:
+        files = {n: wheel.read(n) for n in wheel.namelist() if n.startswith("mindslice/") and not n.endswith("/")}
+        meta = [n for n in wheel.namelist() if n.endswith(".dist-info/METADATA")]
+        metadata = wheel.read(meta[0]).decode("utf-8") if meta else ""
+    if f"\nVersion: {version}\n" not in metadata:
+        raise BuildError(f"the pinned wheel is not version {version}")
+    upstream = {p: up.read(p) for p in up.listdir("mindslice/") if "__pycache__" not in p}
+    if files != upstream:
+        differ = sorted(p for p in set(files) | set(upstream) if files.get(p) != upstream.get(p))
+        raise BuildError(f"the pinned wheel differs from upstream {up.commit[:12]} in: {', '.join(differ[:10])}")
+
+
+# ---------------------------------------------------------------------------
+# text derivation
+# ---------------------------------------------------------------------------
+def select(text: str, how: str, anchor: str, name: str) -> str:
+    lines = text.splitlines(keepends=True)
+    if how == "section":
+        hits = [i for i, line in enumerate(lines) if line.rstrip("\n") == anchor]
+        if len(hits) != 1:
+            raise BuildError(f"selection {name!r}: heading {anchor!r} found {len(hits)} times")
+        level = len(anchor) - len(anchor.lstrip("#"))
+        end = next((j for j in range(hits[0] + 1, len(lines))
+                    if re.match(r"#{1,%d} " % level, lines[j])), len(lines))
+        return "".join(lines[hits[0]:end]).rstrip("\n")
+    if how == "paragraph":
+        hits = [i for i, line in enumerate(lines) if line.startswith(anchor)]
+        if len(hits) != 1:
+            raise BuildError(f"selection {name!r}: paragraph {anchor!r} found {len(hits)} times")
+        end = next((j for j in range(hits[0], len(lines)) if not lines[j].strip()), len(lines))
+        return "".join(lines[hits[0]:end]).rstrip("\n")
+    raise BuildError(f"selection {name!r}: unknown kind {how!r}")
+
+
+def _applies(when: str | None, flags: dict[str, bool]) -> bool:
+    return when is None or flags[when]
+
+
+def apply_rules(source: str, text: str, flags: dict[str, bool]) -> str:
+    for rule in rules.REWRITES:
+        if rule["source"] != source or not _applies(rule["when"], flags):
+            continue
+        if rule["kind"] == "replace":
+            n = text.count(rule["old"])
+            if n != 1:
+                raise BuildError(f"rewrite on {source}: {rule['old'][:60]!r} matched {n} times (expected 1)")
+            text = text.replace(rule["old"], rule["new"])
+        elif rule["kind"] == "cut":
+            a, b = text.count(rule["start"]), text.count(rule["end"])
+            if a != 1 or b != 1:
+                raise BuildError(f"cut on {source}: start matched {a}, end matched {b} times (expected 1 each)")
+            i, j = text.index(rule["start"]), text.index(rule["end"])
+            if j <= i:
+                raise BuildError(f"cut on {source}: end comes before start")
+            text = text[:i] + rule["new"] + text[j:]
+        else:
+            raise BuildError(f"unknown rewrite kind {rule['kind']!r}")
+    for rule in rules.APPENDS:
+        if rule["source"] == source and _applies(rule["when"], flags):
+            text = text.rstrip("\n") + "\n\n" + rule["new"] + "\n"
+    return text
+
+
+def map_upstream(path: str, skills: dict[str, bool]) -> str | None:
+    """The plugin path an upstream skills/ file is published at, or None."""
+    m = re.match(r"skills/([^/]+)/(.+)$", path)
+    if not m or m.group(1) not in rules.SKILL_DIRS:
+        return None
+    out = rules.SKILL_DIRS[m.group(1)]
+    return f"skills/{out}/{m.group(2)}" if skills.get(out) else None
+
+
+def rewrite_links(text: str, src_path: str, out_path: str, outputs: set[str], up: Upstream,
+                  skills: dict[str, bool]) -> str:
+    """Relative links of upstream text at ``src_path``, made valid at ``out_path`` in the plugin: to the published
+    copy when there is one, else to the upstream file at the locked commit."""
+    def fix(m: re.Match[str]) -> str:
+        target = m.group(1)
+        if re.match(r"[a-z][a-z0-9+.-]*:", target) or target.startswith("#"):
+            return m.group(0)
+        path, _, anchor = target.partition("#")
+        resolved = posixpath.normpath(posixpath.join(posixpath.dirname(src_path), path))
+        if resolved.startswith("../"):
+            raise BuildError(f"{src_path}: link {target!r} leaves the upstream tree")
+        mapped = map_upstream(resolved, skills)
+        if mapped in outputs:
+            new = posixpath.relpath(mapped, posixpath.dirname(out_path))
+        elif resolved in up.names:
+            new = up.blob_url(resolved)
+        else:
+            raise BuildError(f"{src_path}: link {target!r} points to {resolved}, which upstream does not have")
+        return f"]({new}{'#' + anchor if anchor else ''})"
+
+    return LINK_RE.sub(fix, text)
+
+
+def fill(text: str, fragments: dict[str, str], upstream_parts: dict[str, str], where: str) -> str:
+    def sub(m: re.Match[str]) -> str:
+        kind, name = m.groups()
+        table = fragments if kind == "host" else upstream_parts
+        if name not in table:
+            raise BuildError(f"{where}: no {kind} part named {name!r}")
+        return table[name]
+
+    for _ in range(3):  # fragments may name other fragments
+        text = PLACEHOLDER_RE.sub(sub, text)
+    if PLACEHOLDER_RE.search(text):
+        raise BuildError(f"{where}: unresolved placeholders")
+    return text
+
+
+def check_links(files: dict[str, "OutFile"]) -> None:
+    for path, f in files.items():
+        if not path.endswith(".md"):
+            continue
+        text = f.data.decode("utf-8")
+        text = re.sub(r"```.*?```", "", text, flags=re.S)
+        for target in LINK_RE.findall(text):
+            if re.match(r"[a-z][a-z0-9+.-]*:", target) or target.startswith("#"):
+                continue
+            resolved = posixpath.normpath(posixpath.join(posixpath.dirname(path), target.partition("#")[0]))
+            if resolved not in files:
+                raise BuildError(f"dead link in {path}: {target!r}")
+
+
+# ---------------------------------------------------------------------------
+# target build
+# ---------------------------------------------------------------------------
+@dataclass
+class OutFile:
+    data: bytes
+    executable: bool = False
+
+
+@dataclass
+class Build:
+    files: dict[str, OutFile] = field(default_factory=dict)
+
+    def add(self, path: str, data: bytes | str, executable: bool = False) -> None:
+        if path in self.files:
+            raise BuildError(f"{path} generated twice")
+        if not any(path == p or (p.endswith("/") and path.startswith(p)) for p in OUTPUT_ALLOWED):
+            raise BuildError(f"{path} is outside the plugin whitelist")
+        self.files[path] = OutFile(data.encode("utf-8") if isinstance(data, str) else data, executable)
+
+
+def _json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+
+
+def build_target(name: str, up: Upstream, lock: dict[str, str]) -> Build:
+    tdir = SRC / "targets" / name
+    cfg = json.loads((tdir / "target.json").read_text(encoding="utf-8"))
+    manifest = json.loads((tdir / "plugin.json").read_text(encoding="utf-8"))
+    version = manifest.get("version", "")
+    if not re.fullmatch(re.escape(lock["version"]) + r"-\d+", version):
+        raise BuildError(f"{name}: plugin version {version!r} must be '{lock['version']}-<revision>'")
+    init = up.text("mindslice/__init__.py")
+    m = re.search(r'^__version__ = "([^"]+)"', init, re.M)
+    if not m or m.group(1) != lock["version"]:
+        raise BuildError(f"upstream __version__ is {m.group(1) if m else None!r}, lock says {lock['version']!r}")
+
+    out = Build()
+    out.add("LICENSE", up.read("LICENSE"))
+    out.add("NOTICE", up.read("NOTICE"))
+
+    # adapter
+    adapter = SRC / "adapter"
+    out.add("adapter/entry.py", (adapter / "entry.py").read_bytes(), executable=True)
+    out.add("adapter/core.py", (adapter / "core.py").read_bytes())
+    out.add("adapter/provision.py", (adapter / "provision.py").read_bytes())
+    out.add("adapter/driver.py", (adapter / "drivers" / f"{cfg['driver']}.py").read_bytes())
+    out.add("adapter/target.json", _json({"target": cfg["target"], "plugin_version": version,
+                                          "engine_version": lock["version"], "page_limit": cfg["page_limit"],
+                                          "hook_slots": cfg["hook_slots"],
+                                          "engine": {"version": lock["version"], "url": lock["wheel"]["url"],
+                                                     "sha256": lock["wheel"]["sha256"]}}))
+
+    # manifest, hooks, shim, readme
+    out.add(cfg["manifest_path"], _json(manifest))
+    hooks = [{"type": "command", "command": cfg["hook_command"].replace("{slot}", str(i)),
+              "timeout": cfg["hook_timeout"]} for i in range(1, cfg["hook_slots"] + 1)]
+    out.add("hooks/hooks.json", _json({
+        "description": "MindSlice: deliver the standing memory at session start, resume, clear and compaction "
+                       "(one page per command, all from one snapshot).",
+        "hooks": {cfg["hook_event"]: [{"hooks": hooks}]}}))
+    out.add("bin/mindslice", (tdir / "bin" / "mindslice").read_bytes(), executable=True)
+    out.add("README.md", (tdir / "README.md").read_bytes())
+
+    # skills
+    skills = cfg["skills"]
+    flags = {"builder": bool(skills.get("slice-builder")), "no_builder": not skills.get("slice-builder")}
+    fragments = {p.stem: p.read_text(encoding="utf-8").rstrip("\n") for p in sorted((tdir / "fragments").glob("*.md"))}
+
+    planned: dict[str, tuple[str, str | None]] = {}  # out path -> (kind, upstream source)
+    if skills.get("setup"):
+        planned["skills/setup/SKILL.md"] = ("setup", None)
+        planned["skills/setup/uninstall.md"] = ("target", "uninstall.md")
+    if skills.get("review"):
+        planned["skills/review/SKILL.md"] = ("common", "skills/review/SKILL.md")
+    for upstream_dir in ("slice-maintainer", "slice-builder"):
+        if skills.get(upstream_dir):
+            for src in up.listdir(f"skills/{upstream_dir}/"):
+                mapped = map_upstream(src, skills)
+                assert mapped is not None
+                planned[mapped] = ("upstream", src)
+    outputs = set(planned)
+
+    for out_path, (kind, src) in planned.items():
+        if kind == "setup":
+            parts = {}
+            for sel_name, (sel_file, how, anchor) in rules.SELECTIONS.items():
+                text = select(up.text(sel_file), how, anchor, sel_name)
+                text = apply_rules(sel_name, text, flags)
+                parts[sel_name] = rewrite_links(text, sel_file, out_path, outputs, up, skills)
+            template = (SRC / "common" / "setup.md").read_text(encoding="utf-8")
+            text = fill(template, fragments, parts, out_path)
+        elif kind == "target":
+            text = fill((tdir / src).read_text(encoding="utf-8"), fragments, {}, out_path)
+        elif kind == "common":
+            text = fill((SRC / "common" / src).read_text(encoding="utf-8"), fragments, {}, out_path)
+        else:
+            text = apply_rules(src, up.text(src), flags)
+            text = rewrite_links(text, src, out_path, outputs, up, skills)
+            text = fill(text, fragments, {}, out_path)
+        out.add(out_path, text)
+
+    check_links(out.files)
+    size = sum(len(f.data) for f in out.files.values())
+    if size > MAX_TARGET_BYTES:
+        raise BuildError(f"{name}: plugin is {size} bytes (limit {MAX_TARGET_BYTES})")
+
+    info = {"target": name, "plugin_version": version,
+            "upstream": {"repo": lock["repo"], "commit": lock["commit"], "version": lock["version"],
+                         "wheel": lock["wheel"]},
+            "files": {p: hashlib.sha256(f.data).hexdigest() for p, f in sorted(out.files.items())}}
+    out.add(".build-info.json", _json(info))
+    return out
+
+
+def write_tree(build: Build, dest: Path) -> None:
+    for path, f in sorted(build.files.items()):
+        target = dest / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(f.data)
+        os.chmod(target, 0o755 if f.executable else 0o644)
+
+
+def read_tree(root: Path) -> dict[str, OutFile]:
+    found: dict[str, OutFile] = {}
+    if not root.is_dir():
+        return found
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d != "__pycache__"]
+        for fn in filenames:
+            p = Path(dirpath) / fn
+            rel = p.relative_to(root).as_posix()
+            found[rel] = OutFile(p.read_bytes(), bool(p.stat().st_mode & 0o100))
+    return found
+
+
+def compare(build: Build, root: Path) -> list[str]:
+    have = read_tree(root)
+    diffs = []
+    for path in sorted(set(have) | set(build.files)):
+        a, b = have.get(path), build.files.get(path)
+        if a is None:
+            diffs.append(f"missing: {path}")
+        elif b is None:
+            diffs.append(f"unexpected: {path}")
+        elif a.data != b.data:
+            diffs.append(f"differs: {path}")
+        elif a.executable != b.executable:
+            diffs.append(f"mode differs: {path}")
+    return diffs
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--target", default="all", choices=TARGETS + ("all",))
+    parser.add_argument("--check", action="store_true", help="verify plugins/ matches a fresh build")
+    parser.add_argument("--upstream", type=Path, default=os.environ.get("MINDSLICE_UPSTREAM") or None,
+                        help="local git checkout of upstream MindSlice (archived at the locked commit)")
+    parser.add_argument("--wheel", type=Path, default=None, help="the pinned engine wheel as a local file")
+    ns = parser.parse_args(argv)
+    lock = json.loads(LOCK.read_text(encoding="utf-8"))
+    targets = TARGETS if ns.target == "all" else (ns.target,)
+    try:
+        up = Upstream.load(lock, Path(ns.upstream) if ns.upstream else None)
+        check_wheel(load_wheel(lock, ns.wheel), up, lock["version"])
+        failed = False
+        for name in targets:
+            build = build_target(name, up, lock)
+            cfg = json.loads((SRC / "targets" / name / "target.json").read_text(encoding="utf-8"))
+            dest = REPO / cfg["output"]
+            if ns.check:
+                diffs = compare(build, dest)
+                if diffs:
+                    failed = True
+                    print(f"{name}: {dest.relative_to(REPO)} is out of date:\n  " + "\n  ".join(diffs))
+                else:
+                    print(f"{name}: up to date ({len(build.files)} files)")
+                continue
+            with tempfile.TemporaryDirectory(dir=dest.parent if dest.parent.exists() else None) as tmp:
+                staging = Path(tmp) / name
+                write_tree(build, staging)
+                if dest.exists():
+                    shutil.rmtree(dest)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(staging), dest)
+            size = sum(len(f.data) for f in build.files.values())
+            print(f"{name}: wrote {dest.relative_to(REPO)} ({len(build.files)} files, {size} bytes)")
+        return 1 if failed else 0
+    except BuildError as exc:
+        print(f"build failed: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

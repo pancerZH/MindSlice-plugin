@@ -1,0 +1,3 @@
+#!/bin/sh
+p=$0; while [ -h "$p" ]; do l=$(readlink "$p"); case $l in /*) p=$l ;; *) p=$(dirname "$p")/$l ;; esac; done
+exec python3 "$(dirname "$p")/../adapter/entry.py" "$@"

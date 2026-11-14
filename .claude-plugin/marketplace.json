@@ -1,0 +1,16 @@
+{
+  "name": "mindslice",
+  "owner": {"name": "pancerZH"},
+  "metadata": {
+    "description": "MindSlice: portable, human-readable long-term memory for coding agents."
+  },
+  "plugins": [
+    {
+      "name": "mindslice",
+      "source": "./plugins/claude",
+      "description": "Portable long-term memory: isolated Markdown slices, standing memory in every session, controlled evolution.",
+      "category": "productivity",
+      "homepage": "https://github.com/pancerZH/MindSlice"
+    }
+  ]
+}

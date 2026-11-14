@@ -1,0 +1,1 @@
+`mindslice`, which the plugin puts on the Bash tool's `PATH` (it is not on the user's own terminal `PATH`; `command -v mindslice` in the Bash tool prints its absolute path). Without `-w` it uses the plugin's workspace, unless the current directory is inside another MindSlice workspace.
