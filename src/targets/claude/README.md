@@ -25,9 +25,8 @@ Requirements: Python 3.12 or newer somewhere on the machine (`python3.12`/`pytho
 
 **Windows** (native): install [Git for Windows](https://git-scm.com/downloads/win)
 (Claude Code runs the plugin's hooks and the `mindslice` command in Git Bash) and Python 3.12+ from
-python.org, then set the plugin option **Python command** to `py` (or the full path of `python.exe`): Claude
-Code starts the MCP server with it, and the default `python3` usually does not exist on Windows. Without Git
-Bash, Claude Code falls back to PowerShell, which this plugin does not support yet.
+python.org (the plugin starts it with the `py` launcher). Without Git Bash, Claude Code falls back to
+PowerShell, which this plugin does not support yet.
 
 The plugin does not bundle the MindSlice engine. In the first session it downloads the pinned release from
 PyPI (`mindslice==0.1.6`, a 150 KB pure-Python wheel with no dependencies), checks its sha256 and unpacks it
@@ -48,8 +47,8 @@ to the file.
 | `/mindslice:slice-maintainer` | consolidate memory and bake reusable slices |
 
 Options (`/plugin` → mindslice → Configure options): **Memory workspace**; **Review every write** (stage
-every agent write for your approval; recommended for small local models); **Python command** (default
-`python3`; `py` on Windows). Option changes apply to new sessions.
+every agent write for your approval; recommended for small local models). Option changes apply to new
+sessions.
 
 ## Commands
 

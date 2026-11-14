@@ -41,7 +41,7 @@ fail=0
 pass() { echo "PASS $*"; }
 bad() { echo "FAIL $*"; fail=1; }
 
-ms() { CLAUDE_PLUGIN_DATA="$WORK/data" "$PLUGIN/adapter/mindslice" "$@"; }  # the plugin's own CLI, for seeding
+ms() { CLAUDE_PLUGIN_ROOT="$PLUGIN" CLAUDE_PLUGIN_DATA="$WORK/data" sh "$PLUGIN/adapter/mindslice" "$@"; }  # the plugin's own CLI, for seeding
 FILLER="$("$PY" -c 'print("这是一条常驻规则的填充内容，用于撑大启动页。" * 180)')"
 seed() {  # seed <workspace> <filler cards> <phrase>
   ms init "$1" > /dev/null
@@ -131,9 +131,8 @@ if [ "${INSTALLED:-0}" = 1 ]; then
     seed "$WORK/iws" 0 "HERON-6620"
     ms -w "$WORK/iws" write notes/garden --title "Garden notes" --reason acceptance \
       --summary "The user's garden has a fig tree named Bartholomew." --content "- The fig tree is named Bartholomew." > /dev/null
-    PYOPT=(); [ "${OS:-}" = Windows_NT ] && PYOPT=(--config "python=${PLUGIN_PYTHON:-py}")
     (cd "$IP" && claude plugin marketplace add "$REPO" --scope local > /dev/null &&
-       claude plugin install mindslice@mindslice --scope local --config "workspace=$WORK/iws" ${PYOPT[@]+"${PYOPT[@]}"} > /dev/null) \
+       claude plugin install mindslice@mindslice --scope local --config "workspace=$WORK/iws" > /dev/null) \
       || bad "6 install failed"
     (cd "$IP" && claude -p "Do these in order and report each result: (1) without any tool, the secret phrase from your MindSlice always-loaded memory; (2) call mcp__plugin_mindslice_mindslice__search with query 'fig tree name' and give the tree's name; (3) run the Bash command: mindslice plugin-status   and print its output verbatim." \
        --model "$MODEL" --output-format stream-json --verbose \

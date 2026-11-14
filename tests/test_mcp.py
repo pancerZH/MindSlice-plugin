@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
 
 import helpers  # noqa: F401
-from helpers import PluginTestCase, write_always
+from helpers import PLUGIN, WINDOWS, PluginTestCase, write_always
 
 import core
 from mindslice import Workspace
@@ -87,13 +88,32 @@ class MCPTest(PluginTestCase):
             r = call(s, "write", {"id": "t/x", "summary": "s", "content": "- y", "reason": "t", "stage": False})
             self.assertTrue(r.get("staged") or "staging" in json.dumps(r), r)
 
+    def test_mcp_as_the_manifest_starts_it(self) -> None:
+        # plugin.json: command ${CLAUDE_PLUGIN_ROOT}/adapter/mindslice (mindslice.cmd on Windows), args ["mcp"],
+        # the workspace option in the environment
+        manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())["mcpServers"]["mindslice"]
+        command = manifest["command"].replace("${CLAUDE_PLUGIN_ROOT}", str(PLUGIN))
+        if WINDOWS:
+            command += ".cmd"  # what Claude's spawn finds through PATHEXT
+        env = {k: v.replace("${user_config.workspace}", str(self.root)).replace("${user_config.stage_writes}", "false")
+               for k, v in manifest["env"].items()}
+        # Claude sets CLAUDE_PLUGIN_ROOT itself and does not expand variables in "env": an entry there would
+        # replace it with the literal text
+        self.assertNotIn("CLAUDE_PLUGIN_ROOT", manifest["env"])
+        os.environ["CLAUDE_PLUGIN_ROOT"] = str(PLUGIN)
+        req = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+        r = self.run_entry(*manifest["args"], stdin=json.dumps(req) + "\n", env=env, cmd=[command])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout.splitlines()[0])["id"], 1)
+        self.assertEqual(core.read_bridge(), str(self.root))
+
     def test_mcp_entry_bridge(self) -> None:
         reqs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}]
         r = self.run_entry("mcp", "--workspace", str(self.root), stdin=json.dumps(reqs[0]) + "\n")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(core.read_bridge(), str(self.root))
         # an unsubstituted option is treated as unset
-        bad = self.run_entry("mcp", "--workspace", "${user_config.workspace}", stdin="")
+        bad = self.run_entry("mcp", stdin="", env={"MINDSLICE_PLUGIN_OPTION_WORKSPACE": "${user_config.workspace}"})
         self.assertEqual(bad.returncode, 1)
         self.assertIn("no memory workspace configured", bad.stderr)
 

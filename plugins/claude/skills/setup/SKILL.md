@@ -40,10 +40,8 @@ MCP entry point.
   installer). The plugin finds `python3.12`/`python3.13` on `PATH`, in `/opt/homebrew/bin`, `/usr/local/bin`,
   `~/.local/bin` and `~/.pyenv/shims`, and on Windows every interpreter the `py` launcher lists. Then start a
   new session.
-- **Windows: the `mcp__plugin_mindslice_mindslice__*` tools are missing** although the startup pages arrived:
-  the MCP server starts with the plugin option "Python command" (default `python3`, which usually does not
-  run on Windows). Have the user set it to `py` (Step 3) and start a new session. Windows needs Git for
-  Windows: without Git Bash, Claude Code runs hooks in PowerShell, which the plugin does not support yet.
+- **Windows: the startup pages are missing**: Windows needs Git for Windows; without Git Bash, Claude Code
+  runs hooks in PowerShell, which the plugin does not support yet.
 - **"the MindSlice engine ... is not installed yet"**: the first session could not download the pinned engine
   from PyPI (offline, proxy, firewall). Show the user the reason; with their agreement, fix the network or
   proxy, or run the `pip install --user mindslice==<version>` command the message names, then start a new
@@ -93,11 +91,6 @@ The plugin's MCP server and hooks read the workspace from the plugin option **"M
 
 Turn on **"Review every write"** (`stage_writes`) when the user runs a small local model, so every write
 waits for their review.
-
-**On Windows**, also set **"Python command"** (`python`) to `py`, or to the full path of a Python 3.12+
-`python.exe`: Claude Code starts the MCP server with this command, and the default `python3` usually does not
-exist on Windows (or is the Microsoft Store placeholder). With the command above, pass both values:
-`{"workspace": "<workspace>", "python": "py"}`. Keep the default on Linux and macOS.
 
 What the plugin does with the folder at the next session start:
 
@@ -203,12 +196,14 @@ If MindSlice was set up by hand before (the `mindslice-setup` skill or the READM
 now delivers the memory a second time and exposes a second set of tools. Look for it, show the user what
 you found, and remove it **only after they agree**, editing surgically so every other entry stays valid:
 
-- **MCP server**: `claude mcp list`, plus `~/.claude.json` (user and per-project `mcpServers`) and any
-  `.mcp.json` in the user's projects, for an entry whose command runs `mindslice ... mcp`. Remove it with
+- **MCP server**: run `claude mcp list` (in each project the user names, too: project and local servers
+  show only there) and look for a server other than `plugin:mindslice:mindslice` whose command runs
+  `mindslice ... mcp`; `claude mcp get <name>` shows its command and scope. Remove it with
   `claude mcp remove <name> -s <scope>`. Note the `-w` path it used: if it differs from the plugin's
   workspace, ask which one the user wants to keep (Step 3).
-- **Hooks**: `~/.claude/settings.json`, `.claude/settings.json` and `.claude/settings.local.json` in their
-  projects, for `SessionStart` (or other) hooks that run `mindslice ... boot`.
+- **Hooks**: ask the user to open `/hooks` and look under `SessionStart` (and other events) for a hook that
+  runs `mindslice ... boot` and is not the plugin's, then delete it there. Do not read Claude's own settings
+  or configuration files yourself: they can hold the user's credentials.
 - **Standing rule**: `~/.claude/CLAUDE.md` and project `CLAUDE.md` files, for the paragraph that tells the
   agent to call the MindSlice server's `manifest` tool. The plugin's MCP server instructions replace it.
 - **The PyPI/checkout `mindslice` command** itself can stay; the plugin does not use it. Removing a

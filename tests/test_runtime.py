@@ -160,10 +160,9 @@ class HookTest(PluginTestCase):
         text = env_file.read_text()
         self.assertEqual(text, driver.env_lines(ws, driver.launcher_dir()))
         self.assertEqual(text.count("export MINDSLICE_PLUGIN_WORKSPACE="), 1)
-        self.assertIn("export MINDSLICE_PLUGIN_PYTHON=", text)
         self.assertIn("export MINDSLICE_PLUGIN_DATA=", text)
-        python_line = next(line for line in text.splitlines() if line.startswith("export MINDSLICE_PLUGIN_PYTHON="))
-        self.assertNotIn("\\", python_line)  # forward slashes for Git Bash
+        data_line = next(line for line in text.splitlines() if line.startswith("export MINDSLICE_PLUGIN_DATA="))
+        self.assertNotIn("\\", data_line)  # forward slashes for Git Bash
 
     @unittest.skipIf(WINDOWS, "POSIX shell")
     def test_bash_tool_gets_mindslice_on_path(self) -> None:
@@ -191,7 +190,8 @@ class HookTest(PluginTestCase):
 
         d = driver.write_launchers()
         text = (d / "mindslice").read_text()
-        self.assertIn((core.PLUGIN_ROOT / "adapter" / "mindslice").as_posix(), text)
+        self.assertIn((core.PLUGIN_ROOT / "adapter" / "entry.py").as_posix(), text)
+        self.assertIn(Path(sys.executable).as_posix(), text)  # the interpreter the hook checked
         mtime = (d / "mindslice").stat().st_mtime_ns
         driver.write_launchers()  # unchanged: not rewritten
         self.assertEqual((d / "mindslice").stat().st_mtime_ns, mtime)
@@ -339,73 +339,67 @@ class CliRoutingTest(PluginTestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue((ws / "overlay" / "t" / "four.md").is_file())
 
-    @unittest.skipIf(WINDOWS, "symlinks need privileges on Windows")
-    def test_symlinked_shim(self) -> None:
-        link = self.tmp / "bin" / "mindslice"
-        link.parent.mkdir()
-        link.symlink_to(BIN)
-        r = self.run_entry("--version", cmd=[str(link)])
+    def test_generated_launcher_needs_no_host_environment(self) -> None:
+        # the Bash tool and the user's terminal: no CLAUDE_PLUGIN_ROOT, no CLAUDE_PLUGIN_DATA
+        import driver
+
+        d = driver.write_launchers()
+        launcher = d / ("mindslice.cmd" if WINDOWS else "mindslice")
+        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_PLUGIN_ROOT", "CLAUDE_PLUGIN_DATA")}
+        r = subprocess.run([str(launcher), "--version"], capture_output=True, text=True, env=env, timeout=120)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("mindslice 0.", r.stdout)
 
 
 class ShimTest(PluginTestCase):
-    """The sh shim picks its Python: exported interpreter, then the plugin option, then the platform's names."""
+    """adapter/mindslice: ${CLAUDE_PLUGIN_ROOT}/adapter/entry.py with a fixed interpreter name (py first on Windows)."""
 
     def fake_python(self, name: str, marker: str) -> Path:
         d = self.tmp / f"bin-{name}"
         d.mkdir()
         exe = d / name
-        exe.write_text(f"#!/bin/sh\necho {marker}\n")
+        exe.write_text(f'#!/bin/sh\nprintf "%s\\n" "{marker} $1"\n')
         exe.chmod(0o755)
         return exe
+
+    def run_shim(self, path: str, **env: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["/bin/sh", str(BIN), "x"], capture_output=True, text=True,
+                              env=dict({"PATH": path, "CLAUDE_PLUGIN_ROOT": "/plugin/root"}, **env))
 
     @unittest.skipIf(WINDOWS, "POSIX shim behaviour")
     def test_order(self) -> None:
         py3 = self.fake_python("python3", "PY3")
-        opt = self.fake_python("custompy", "OPTION")
-        base = {"PATH": f"{py3.parent}:/usr/bin:/bin"}
-        os.environ.pop("MINDSLICE_PLUGIN_PYTHON")
-        run = lambda **env: subprocess.run([str(BIN), "x"], capture_output=True, text=True,  # noqa: E731
-                                           env=dict(base, **env)).stdout.strip()
-        self.assertEqual(run(), "PY3")
-        self.assertEqual(run(CLAUDE_PLUGIN_OPTION_PYTHON=str(opt)), "OPTION")
-        r = subprocess.run([str(BIN), "--version"], capture_output=True, text=True,
-                           env=dict(base, MINDSLICE_PLUGIN_PYTHON=sys.executable,
-                                    MINDSLICE_PLUGIN_ENGINE_DIR=str(helpers.ENGINE)))
-        self.assertIn("mindslice 0.", r.stdout)
-        # a configured command that does not exist falls through to the platform names
-        self.assertEqual(run(CLAUDE_PLUGIN_OPTION_PYTHON="no-such-python"), "PY3")
+        py = self.fake_python("python", "PY")
+        self.assertEqual(self.run_shim(f"{py3.parent}:{py.parent}").stdout.strip(),
+                         "PY3 /plugin/root/adapter/entry.py")
+        self.assertEqual(self.run_shim(str(py.parent)).stdout.strip(), "PY /plugin/root/adapter/entry.py")
+        r = self.run_shim(str(py3.parent), CLAUDE_PLUGIN_ROOT="")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("CLAUDE_PLUGIN_ROOT is not set", r.stderr)
 
     @unittest.skipIf(WINDOWS, "POSIX shim behaviour")
     def test_windows_order_in_git_bash(self) -> None:
-        self.fake_python("python3", "PY3")
+        py3 = self.fake_python("python3", "PY3")
         py = self.fake_python("py", "LAUNCHER")
-        os.environ.pop("MINDSLICE_PLUGIN_PYTHON")
-        path = f"{py.parent}:{self.tmp / 'bin-python3'}:/usr/bin:/bin"
-        out = subprocess.run([str(BIN)], capture_output=True, text=True,
-                             env={"PATH": path, "OS": "Windows_NT"}).stdout.strip()
-        self.assertEqual(out, "LAUNCHER")
+        out = self.run_shim(f"{py3.parent}:{py.parent}", OS="Windows_NT",
+                            CLAUDE_PLUGIN_ROOT="C:\\Users\\me\\.claude\\plugins\\cache\\m").stdout.strip()
+        # a native py gets the Windows path as Claude gave it (mixed separators are fine for Python)
+        self.assertEqual(out, "LAUNCHER C:\\Users\\me\\.claude\\plugins\\cache\\m/adapter/entry.py")
 
-
-    @unittest.skipIf(WINDOWS, "POSIX shim behaviour")
-    def test_windows_entry_path_goes_through_cygpath(self) -> None:
-        # Git Bash with MSYS_NO_PATHCONV=1 inherited: the shim must convert /c/... itself
-        py = self.fake_python("py", "unused")
-        py.write_text('#!/bin/sh\necho "ENTRY=$1"\n')
-        cyg = py.parent / "cygpath"
-        cyg.write_text('#!/bin/sh\n[ "$1" = -m ] && echo "C:/converted$2"\n')
-        cyg.chmod(0o755)
-        os.environ.pop("MINDSLICE_PLUGIN_PYTHON")
-        out = subprocess.run([str(BIN)], capture_output=True, text=True,
-                             env={"PATH": f"{py.parent}:/usr/bin:/bin", "OS": "Windows_NT",
-                                  "MSYS_NO_PATHCONV": "1"}).stdout.strip()
-        self.assertTrue(out.startswith("ENTRY=C:/converted/"), out)
-        self.assertTrue(out.endswith("/adapter/entry.py"), out)
-        # elsewhere the path is passed as is
-        out = subprocess.run([str(BIN)], capture_output=True, text=True,
-                             env={"PATH": f"{py.parent}:/usr/bin:/bin", "MINDSLICE_PLUGIN_PYTHON": str(py)}).stdout
-        self.assertNotIn("converted", out)
+    def test_launchers_are_plain(self) -> None:
+        # what the plugin directory's validator needs: literal ${CLAUDE_PLUGIN_ROOT}/<file> paths, fixed interpreter
+        # names, no command substitution, no variable commands
+        sh = BIN.read_text()
+        for bad in ("$(", "`", 'exec "$', "exec $", "eval", "dirname", "readlink"):
+            self.assertNotIn(bad, sh)
+        execs = re.findall(r"exec (\S+) (\S+)", sh)
+        self.assertEqual({e[0] for e in execs}, {"py", "python", "python3"})
+        self.assertEqual({e[1] for e in execs}, {'"${CLAUDE_PLUGIN_ROOT}/adapter/entry.py"'})
+        cmd = (BIN.parent / "mindslice.cmd").read_text()
+        runs = [line for line in cmd.splitlines() if "entry.py" in line and not line.lower().startswith("rem")]
+        self.assertEqual([line.split()[0] for line in runs], ["py", "python"])
+        self.assertTrue(all('"%CLAUDE_PLUGIN_ROOT%\\adapter\\entry.py" %*' in line for line in runs), runs)
+        self.assertNotIn("%~", cmd)
 
 
 class WindowsLogicTest(PluginTestCase):
@@ -419,20 +413,6 @@ class WindowsLogicTest(PluginTestCase):
         self.assertEqual(entry.parse_py_list(sample), [
             "C:\\Users\\me\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
             "C:\\Program Files\\Python312\\python.exe", "C:\\Python311\\python.exe"])
-
-    def test_startup_note_only_when_mcp_python_is_missing(self) -> None:
-        from unittest import mock
-
-        import driver
-
-        if os.name != "nt":
-            self.assertEqual(driver.startup_notes(), [])
-        with mock.patch.object(driver.os, "name", "nt"), mock.patch.object(driver, "_python_ok", return_value=False):
-            notes = driver.startup_notes()
-            self.assertEqual(len(notes), 1)
-            self.assertIn("`py`", notes[0])
-            os.environ["CLAUDE_PLUGIN_OPTION_PYTHON"] = "py"
-            self.assertEqual(driver.startup_notes(), [])
 
     def test_pending_block_names_the_terminal_shim(self) -> None:
         self.assertEqual(core.bin_path().name, "mindslice.cmd" if WINDOWS else "mindslice")

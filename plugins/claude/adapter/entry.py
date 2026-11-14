@@ -115,7 +115,7 @@ def _bootstrap():
             env[REEXEC_FLAG] = "1"
             _relaunch(exe, env)
     where = ("python.org installs (found with the py launcher), %LOCALAPPDATA%\\Programs\\Python and PATH are "
-             "searched; or set the plugin's \"Python command\" option" if WINDOWS else
+             "searched" if WINDOWS else
              "python3.12 on PATH, Homebrew, ~/.local/bin or pyenv are searched")
     _fail("needs Python >= 3.12 (found %d.%d at %s); install Python 3.12+ (%s) and restart the session."
           % (sys.version_info[0], sys.version_info[1], sys.executable, where))

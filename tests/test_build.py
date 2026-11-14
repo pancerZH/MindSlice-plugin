@@ -112,10 +112,13 @@ class OutputTest(unittest.TestCase):
         for path, digest in info["files"].items():
             self.assertEqual(hashlib.sha256((PLUGIN / path).read_bytes()).hexdigest(), digest, path)
 
-    def test_no_bare_python3_in_launch_commands(self) -> None:
+    def test_launch_commands(self) -> None:
         manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())
-        self.assertEqual(manifest["mcpServers"]["mindslice"]["command"], "${user_config.python}")
-        self.assertEqual(manifest["userConfig"]["python"]["default"], "python3")
+        mcp = manifest["mcpServers"]["mindslice"]
+        self.assertEqual(mcp["command"], "${CLAUDE_PLUGIN_ROOT}/adapter/mindslice")
+        self.assertEqual(mcp["args"], ["mcp"])
+        self.assertEqual(mcp["env"]["MINDSLICE_PLUGIN_OPTION_WORKSPACE"], "${user_config.workspace}")
+        self.assertNotIn("python", manifest["userConfig"])
         hooks = json.loads((PLUGIN / "hooks" / "hooks.json").read_text())["hooks"]["SessionStart"][0]["hooks"]
         for i, h in enumerate(hooks, 1):
             self.assertEqual(h["command"], f'sh "${{CLAUDE_PLUGIN_ROOT}}/adapter/mindslice" hook {i}')

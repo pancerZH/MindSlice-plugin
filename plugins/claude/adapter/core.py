@@ -112,8 +112,11 @@ def atomic_write(path: Path, text: str) -> None:
 
 
 def bin_path() -> Path:
-    """The CLI for the user's own terminal: the sh shim, or ``mindslice.cmd`` for cmd/PowerShell on Windows."""
-    return PLUGIN_ROOT / "adapter" / ("mindslice.cmd" if os.name == "nt" else "mindslice")
+    """The CLI for the user's own terminal: the launcher the driver writes at session start (it needs no host
+    environment), else the adapter's; ``mindslice.cmd`` for cmd/PowerShell on Windows."""
+    name = "mindslice.cmd" if os.name == "nt" else "mindslice"
+    launchers = getattr(driver, "launcher_dir", None)
+    return (launchers() if launchers else PLUGIN_ROOT / "adapter") / name
 
 
 # ---------------------------------------------------------------------------

@@ -8,13 +8,15 @@ of one shared snapshot.
 
 The plugin has no top-level ``bin/`` (Claude puts it on the Bash tool's PATH, but Chat and Cowork refuse to
 install a plugin that has one). Slot 1 provides the ``mindslice`` command instead: it writes a small launcher to
-``<plugin data>/bin/`` that runs this plugin version's ``adapter/mindslice`` and, through ``$CLAUDE_ENV_FILE``,
-puts that directory first on the Bash tool's PATH, next to ``MINDSLICE_PLUGIN_PYTHON`` (the verified interpreter),
-``MINDSLICE_PLUGIN_DATA`` and, once resolved, ``MINDSLICE_PLUGIN_WORKSPACE``. It does so in every state
-(unconfigured, isolated), since ``mindslice plugin-status`` is how setup diagnoses those states.
+``<plugin data>/bin/`` that runs the verified interpreter on this plugin version's ``adapter/entry.py`` and,
+through ``$CLAUDE_ENV_FILE``, puts that directory first on the Bash tool's PATH, next to ``MINDSLICE_PLUGIN_DATA``
+and, once resolved, ``MINDSLICE_PLUGIN_WORKSPACE``. It does so in every state (unconfigured, isolated), since
+``mindslice plugin-status`` is how setup diagnoses those states.
 
-The MCP server is started directly by Claude with the ``python`` plugin option (default ``python3``): on Windows,
-where ``python3`` is usually missing or the Microsoft Store placeholder, the user sets it to ``py``.
+The MCP server's command is ``${CLAUDE_PLUGIN_ROOT}/adapter/mindslice`` itself (the plugin directory refuses
+commands it cannot follow, such as a configurable interpreter): the sh launcher on macOS/Linux, ``mindslice.cmd``
+on Windows, where Claude's spawn resolves the name through PATHEXT. Its workspace option arrives in the
+environment (``MINDSLICE_PLUGIN_OPTION_WORKSPACE``), not on the command line.
 """
 
 from __future__ import annotations
@@ -49,7 +51,8 @@ def plugin_data_dir() -> Path:
 
 
 def configured_workspace() -> str | None:
-    return _env("CLAUDE_PLUGIN_OPTION_WORKSPACE")
+    # hooks: Claude's own variable; the MCP server: the copy plugin.json puts in its environment
+    return _env("CLAUDE_PLUGIN_OPTION_WORKSPACE") or _env("MINDSLICE_PLUGIN_OPTION_WORKSPACE")
 
 
 def stage_writes_enabled() -> bool:
@@ -89,18 +92,21 @@ def _write_if_changed(path: Path, text: str, newline: str = "\n") -> None:
 
 def write_launchers() -> Path:
     """``<plugin data>/bin/mindslice`` (and ``mindslice.cmd`` on Windows): stable paths that run the plugin
-    version installed now, refreshed at every session start, so links to them survive plugin updates."""
+    version installed now with the interpreter this hook runs on (already checked to be 3.12+), refreshed at every
+    session start, so links to them survive plugin updates. They run entry.py directly: the Bash tool and the
+    user's terminal have no ``CLAUDE_PLUGIN_ROOT`` for ``adapter/mindslice``."""
     import core
 
     d = launcher_dir()
-    adapter = core.PLUGIN_ROOT / "adapter"
+    entry = core.PLUGIN_ROOT / "adapter" / "entry.py"
+    python = Path(sys.executable)
     sh = d / "mindslice"
     _write_if_changed(sh, "#!/bin/sh\n# Written by the MindSlice plugin at session start: runs the installed plugin's CLI.\n"
-                          f"exec sh {shlex.quote((adapter / 'mindslice').as_posix())} \"$@\"\n")
+                          f"exec {shlex.quote(python.as_posix())} {shlex.quote(entry.as_posix())} \"$@\"\n")
     sh.chmod(0o755)
     if os.name == "nt":
         _write_if_changed(d / "mindslice.cmd", "@echo off\nrem Written by the MindSlice plugin at session start.\n"
-                                               f"call \"{adapter / 'mindslice.cmd'}\" %*\nexit /b %ERRORLEVEL%\n",
+                                               f"\"{python}\" \"{entry}\" %*\nexit /b %ERRORLEVEL%\n",
                           newline="\r\n")
     return d
 
@@ -124,10 +130,9 @@ def path_entry(directory: Path) -> str:
 
 
 def env_lines(workspace: Path | None, launchers: Path | None = None) -> str:
-    """What slot 1 adds to ``$CLAUDE_ENV_FILE``: ``export NAME='value'`` lines (forward slashes, so Git Bash on
-    Windows can run the interpreter path as is) and the PATH entry for the launcher, added once."""
-    python = Path(sys.executable).as_posix()
-    lines = f"export MINDSLICE_PLUGIN_PYTHON={shlex.quote(python)}\n"
+    """What slot 1 adds to ``$CLAUDE_ENV_FILE``: ``export NAME='value'`` lines (forward slashes for Git Bash on
+    Windows) and the PATH entry for the launcher, added once."""
+    lines = ""
     data = _env("CLAUDE_PLUGIN_DATA")
     if data:  # namespaced: the Bash tool's environment is shared by every plugin
         lines += f"export MINDSLICE_PLUGIN_DATA={shlex.quote(Path(data).as_posix())}\n"
@@ -156,29 +161,6 @@ def _export_env(workspace: Path | None) -> None:
             fh.write(block)
     except OSError:
         pass
-
-
-def _python_ok(command: str) -> bool:
-    exe = shutil.which(command)
-    if not exe:
-        return False
-    try:
-        return subprocess.run([exe, "-c", "import sys; sys.exit(sys.version_info < (3, 8))"], timeout=10,
-                              stdin=subprocess.DEVNULL, capture_output=True).returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        return False
-
-
-def startup_notes() -> list[str]:
-    """Windows only: the MCP server is started with the ``python`` option (default ``python3``), which usually
-    does not exist there. Say how to fix it if the tools are missing (the option may be set without the hook
-    seeing it, so the note is conditional)."""
-    if os.name != "nt" or _env("CLAUDE_PLUGIN_OPTION_PYTHON") or _python_ok("python3"):
-        return []
-    return ["On Windows the plugin's MCP server starts with the \"Python command\" plugin option, which defaults "
-            "to `python3`, and `python3` does not run here. If the mcp__plugin_mindslice_mindslice__* tools are "
-            "missing in this session, tell the user to set that option to `py` (or the full path of python.exe) "
-            "via /plugin and start a new session."]
 
 
 def run_hook(args: list[str]) -> int:

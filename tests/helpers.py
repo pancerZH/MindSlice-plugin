@@ -46,7 +46,7 @@ ENGINE = _engine()
 sys.path.insert(0, str(ENGINE))
 
 # Variables that would point a test at the developer's real memory.
-SCRUB = ("MINDSLICE_PLUGIN_WHEEL", "MINDSLICE_PLUGIN_PYTHON", "CLAUDE_PLUGIN_OPTION_PYTHON", "MINDSLICE_WORKSPACE", "MINDSLICE_PLUGIN_WORKSPACE", "MINDSLICE_PLUGIN_ISOLATE", "CLAUDE_PLUGIN_OPTION_WORKSPACE",
+SCRUB = ("MINDSLICE_PLUGIN_WHEEL", "MINDSLICE_PLUGIN_PYTHON", "CLAUDE_PLUGIN_OPTION_PYTHON", "MINDSLICE_PLUGIN_OPTION_WORKSPACE", "CLAUDE_PLUGIN_ROOT", "MINDSLICE_WORKSPACE", "MINDSLICE_PLUGIN_WORKSPACE", "MINDSLICE_PLUGIN_ISOLATE", "CLAUDE_PLUGIN_OPTION_WORKSPACE",
          "CLAUDE_PLUGIN_DATA", "CLAUDE_ENV_FILE", "MINDSLICE_PLUGIN_STAGE_WRITES", "CLAUDE_PLUGIN_OPTION_STAGE_WRITES")
 
 
@@ -62,7 +62,12 @@ class PluginTestCase(unittest.TestCase):
         os.environ["CLAUDE_PLUGIN_DATA"] = str(self.tmp / "data")
         os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
         os.environ["MINDSLICE_PLUGIN_ENGINE_DIR"] = str(ENGINE)  # subprocesses: no download per test
-        os.environ["MINDSLICE_PLUGIN_PYTHON"] = sys.executable  # the shims run the interpreter under test
+        os.environ["CLAUDE_PLUGIN_ROOT"] = str(PLUGIN)  # as Claude sets it for hooks and the MCP server
+        if not WINDOWS:  # the launchers run python3 from PATH: make that the interpreter under test
+            pybin = self.tmp / "pybin"
+            pybin.mkdir()
+            (pybin / "python3").symlink_to(sys.executable)
+            os.environ["PATH"] = f"{pybin}{os.pathsep}{os.environ.get('PATH', '')}"
 
     def tearDown(self) -> None:
         os.environ.clear()
