@@ -6,6 +6,9 @@ p=$0
 case "${OS:-}" in Windows_NT) p=$(printf '%s' "$p" | tr '\\' '/') ;; esac  # C:\...\bin\mindslice -> C:/...
 while [ -h "$p" ]; do l=$(readlink "$p"); case $l in /*) p=$l ;; *) p=$(dirname "$p")/$l ;; esac; done
 entry=$(dirname "$p")/../adapter/entry.py
+# Windows: hand Python a C:/... path. MSYS converts /c/... arguments for native programs only while
+# MSYS_NO_PATHCONV is unset, and an inherited MSYS_NO_PATHCONV=1 would leave python.exe a path it reads as C:\c\...
+case "${OS:-}" in Windows_NT) if command -v cygpath >/dev/null 2>&1; then entry=$(cygpath -m "$entry"); fi ;; esac
 for v in "${MINDSLICE_PLUGIN_PYTHON:-}" "${CLAUDE_PLUGIN_OPTION_PYTHON:-}"; do
   if [ -n "$v" ] && command -v "$v" >/dev/null 2>&1; then exec "$v" "$entry" "$@"; fi
 done

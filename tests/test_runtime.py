@@ -340,6 +340,26 @@ class ShimTest(PluginTestCase):
         self.assertEqual(out, "LAUNCHER")
 
 
+    @unittest.skipIf(WINDOWS, "POSIX shim behaviour")
+    def test_windows_entry_path_goes_through_cygpath(self) -> None:
+        # Git Bash with MSYS_NO_PATHCONV=1 inherited: the shim must convert /c/... itself
+        py = self.fake_python("py", "unused")
+        py.write_text('#!/bin/sh\necho "ENTRY=$1"\n')
+        cyg = py.parent / "cygpath"
+        cyg.write_text('#!/bin/sh\n[ "$1" = -m ] && echo "C:/converted$2"\n')
+        cyg.chmod(0o755)
+        os.environ.pop("MINDSLICE_PLUGIN_PYTHON")
+        out = subprocess.run([str(BIN)], capture_output=True, text=True,
+                             env={"PATH": f"{py.parent}:/usr/bin:/bin", "OS": "Windows_NT",
+                                  "MSYS_NO_PATHCONV": "1"}).stdout.strip()
+        self.assertTrue(out.startswith("ENTRY=C:/converted/"), out)
+        self.assertTrue(out.endswith("/adapter/entry.py"), out)
+        # elsewhere the path is passed as is
+        out = subprocess.run([str(BIN)], capture_output=True, text=True,
+                             env={"PATH": f"{py.parent}:/usr/bin:/bin", "MINDSLICE_PLUGIN_PYTHON": str(py)}).stdout
+        self.assertNotIn("converted", out)
+
+
 class WindowsLogicTest(PluginTestCase):
     def test_parse_py_list(self) -> None:
         import entry

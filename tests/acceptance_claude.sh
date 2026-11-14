@@ -29,9 +29,6 @@ if [ "${OS:-}" = Windows_NT ]; then
   PY="${PYTHON:-py}"
   # native programs (claude, python) need C:/... paths, also in environment variables
   REPO="$(cygpath -m "$REPO")"; WORK="$(cygpath -m "$WORK")"
-  # every path here is already C:/...; without this, MSYS rewrites arguments such as the prompt "/compact" into
-  # "C:/Program Files/Git/compact" before claude.exe sees them
-  export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
 else
   PY="${PYTHON:-python3}"
 fi
@@ -58,8 +55,12 @@ seed() {  # seed <workspace> <filler cards> <phrase>
 
 ask() {  # ask <workspace> <out.jsonl> <prompt> [extra claude args...]
   local ws="$1" out="$2" prompt="$3"; shift 3
-  (cd "$WORK/proj" && MINDSLICE_WORKSPACE="$ws" claude -p "$prompt" --model "$MODEL" --plugin-dir "$PLUGIN" \
-     --output-format stream-json --verbose "$@" < /dev/null > "$out" 2> "$out.err") || true
+  local noconv=()
+  # Git Bash rewrites an argument such as "/compact" into "C:/Program Files/Git/compact" for native programs.
+  # Turn that off for this one call only: exported for the whole script, it would reach the session's Bash tool.
+  case "$prompt" in /*) [ "${OS:-}" = Windows_NT ] && noconv=(env MSYS_NO_PATHCONV=1 "MSYS2_ARG_CONV_EXCL=*") ;; esac
+  (cd "$WORK/proj" && MINDSLICE_WORKSPACE="$ws" ${noconv[@]+"${noconv[@]}"} claude -p "$prompt" --model "$MODEL" \
+     --plugin-dir "$PLUGIN" --output-format stream-json --verbose "$@" < /dev/null > "$out" 2> "$out.err") || true
 }
 
 result() { "$PY" -c 'import json,sys
@@ -132,7 +133,7 @@ if [ "${INSTALLED:-0}" = 1 ]; then
       --summary "The user's garden has a fig tree named Bartholomew." --content "- The fig tree is named Bartholomew." > /dev/null
     PYOPT=(); [ "${OS:-}" = Windows_NT ] && PYOPT=(--config "python=${PLUGIN_PYTHON:-py}")
     (cd "$IP" && claude plugin marketplace add "$REPO" --scope local > /dev/null &&
-       claude plugin install mindslice@mindslice --scope local --config "workspace=$WORK/iws" "${PYOPT[@]}" > /dev/null) \
+       claude plugin install mindslice@mindslice --scope local --config "workspace=$WORK/iws" ${PYOPT[@]+"${PYOPT[@]}"} > /dev/null) \
       || bad "6 install failed"
     (cd "$IP" && claude -p "Do these in order and report each result: (1) without any tool, the secret phrase from your MindSlice always-loaded memory; (2) call mcp__plugin_mindslice_mindslice__search with query 'fig tree name' and give the tree's name; (3) run the Bash command: mindslice plugin-status   and print its output verbatim." \
        --model "$MODEL" --output-format stream-json --verbose \
