@@ -9,28 +9,67 @@ Subcommands (see ``core.main``): ``hook <driver-args...>``, ``mcp [--workspace D
 """
 
 import os
+import re
 import subprocess
 import sys
 
 MIN_VERSION = (3, 12)
 REEXEC_FLAG = "_MINDSLICE_REEXEC"
+WINDOWS = os.name == "nt"
 SEARCH_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "~/.local/bin", "~/.pyenv/shims")
 NAMES = ("python3.14", "python3.13", "python3.12", "python3")
+WINDOWS_NAMES = ("python3.14.exe", "python3.13.exe", "python3.12.exe", "python.exe", "python3.exe")
+WINDOWS_VERSIONS = ("314", "313", "312")
 PROBE = "import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)"
+_PY_LIST_PATH = re.compile(r"([A-Za-z]:[\\/].*?\.exe)\s*$", re.I)
 
 
-def _candidates():
-    seen = set()
+def parse_py_list(text):
+    """Interpreter paths from ``py -0p`` output (any launcher generation), newest first as listed."""
+    paths = []
+    for line in text.splitlines():
+        m = _PY_LIST_PATH.search(line.strip())
+        if m:
+            paths.append(m.group(1))
+    return paths
+
+
+def _windows_paths():
+    try:
+        out = subprocess.run(["py", "-0p"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                             timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        out = ""
+    for path in parse_py_list(out):
+        yield path
+    roots = [os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python"),
+             os.environ.get("ProgramFiles", ""), os.environ.get("ProgramFiles(x86)", "")]
+    for version in WINDOWS_VERSIONS:
+        for root in roots:
+            if root:
+                yield os.path.join(root, "Python" + version, "python.exe")
+    dirs = [d for d in os.environ.get("PATH", "").split(os.pathsep) if d]
+    for name in WINDOWS_NAMES:
+        for d in dirs:
+            yield os.path.join(d, name)
+
+
+def _posix_paths():
     dirs = [d for d in os.environ.get("PATH", "").split(os.pathsep) if d]
     dirs += [os.path.expanduser(d) for d in SEARCH_DIRS]
     for name in NAMES:
         for d in dirs:
-            path = os.path.join(d, name)
-            real = os.path.realpath(path)
-            if real in seen or not os.path.isfile(path) or not os.access(path, os.X_OK):
-                continue
-            seen.add(real)
-            yield path
+            yield os.path.join(d, name)
+
+
+def _candidates():
+    seen = set()
+    for path in (_windows_paths() if WINDOWS else _posix_paths()):
+        real = os.path.normcase(os.path.realpath(path))
+        if real in seen or not os.path.isfile(path) or not os.access(path, os.X_OK):
+            continue
+        seen.add(real)
+        yield path
 
 
 def _usable(exe):
@@ -51,21 +90,35 @@ def _fail(message):
     sys.exit(1)
 
 
+def _relaunch(exe, env):
+    argv = [exe, os.path.abspath(__file__)] + sys.argv[1:]
+    if WINDOWS:
+        # os.exec* on Windows starts a new process and ends this one, so the host would see its MCP server
+        # or hook exit at once. Run the child on the inherited stdio and pass its exit code on instead.
+        try:
+            sys.exit(subprocess.call(argv, env=env))
+        except KeyboardInterrupt:
+            sys.exit(130)
+    os.execve(exe, argv, env)
+
+
 def _bootstrap():
     if sys.version_info >= MIN_VERSION:
         os.environ.pop(REEXEC_FLAG, None)
         return
     if os.environ.get(REEXEC_FLAG) != "1":
-        me = os.path.realpath(sys.executable or "")
+        me = os.path.normcase(os.path.realpath(sys.executable or ""))
         for exe in _candidates():
-            if os.path.realpath(exe) == me or not _usable(exe):
+            if os.path.normcase(os.path.realpath(exe)) == me or not _usable(exe):
                 continue
             env = dict(os.environ)
             env[REEXEC_FLAG] = "1"
-            os.execve(exe, [exe, os.path.abspath(__file__)] + sys.argv[1:], env)
-    _fail("needs Python >= 3.12 (found %d.%d at %s); install Python 3.12+ (python3.12 on PATH, Homebrew, "
-          "~/.local/bin or pyenv are searched) and restart the session."
-          % (sys.version_info[0], sys.version_info[1], sys.executable))
+            _relaunch(exe, env)
+    where = ("python.org installs (found with the py launcher), %LOCALAPPDATA%\\Programs\\Python and PATH are "
+             "searched; or set the plugin's \"Python command\" option" if WINDOWS else
+             "python3.12 on PATH, Homebrew, ~/.local/bin or pyenv are searched")
+    _fail("needs Python >= 3.12 (found %d.%d at %s); install Python 3.12+ (%s) and restart the session."
+          % (sys.version_info[0], sys.version_info[1], sys.executable, where))
 
 
 def main():

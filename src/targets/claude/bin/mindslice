@@ -1,3 +1,17 @@
 #!/bin/sh
-p=$0; while [ -h "$p" ]; do l=$(readlink "$p"); case $l in /*) p=$l ;; *) p=$(dirname "$p")/$l ;; esac; done
-exec python3 "$(dirname "$p")/../adapter/entry.py" "$@"
+# MindSlice plugin CLI (also the hook launcher): run the plugin's entry point with a usable Python.
+# Order: $MINDSLICE_PLUGIN_PYTHON (exported by the session-start hook), the plugin's "Python command" option,
+# then py/python/python3 on Windows (Git Bash) or python3/python elsewhere. entry.py upgrades to 3.12+ itself.
+p=$0
+case "${OS:-}" in Windows_NT) p=$(printf '%s' "$p" | tr '\\' '/') ;; esac  # C:\...\bin\mindslice -> C:/...
+while [ -h "$p" ]; do l=$(readlink "$p"); case $l in /*) p=$l ;; *) p=$(dirname "$p")/$l ;; esac; done
+entry=$(dirname "$p")/../adapter/entry.py
+for v in "${MINDSLICE_PLUGIN_PYTHON:-}" "${CLAUDE_PLUGIN_OPTION_PYTHON:-}"; do
+  if [ -n "$v" ] && command -v "$v" >/dev/null 2>&1; then exec "$v" "$entry" "$@"; fi
+done
+case "${OS:-}" in Windows_NT) names="py python python3" ;; *) names="python3 python" ;; esac
+for n in $names; do
+  if command -v "$n" >/dev/null 2>&1; then exec "$n" "$entry" "$@"; fi
+done
+echo "mindslice plugin: no Python found; install Python 3.12 or newer" >&2
+exit 1

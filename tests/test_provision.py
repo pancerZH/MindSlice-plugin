@@ -92,7 +92,8 @@ class ProvisionTest(PluginTestCase):
         # a fresh data dir, offline, no preinstalled engine: slot 1 tells the model, exit 0; the CLI exits 1
         pinned = json.loads((helpers.PLUGIN / "adapter" / "target.json").read_text())["engine"]["version"]
         probe = subprocess.run([sys.executable, "-c", "import importlib.metadata as m; print(m.version('mindslice'))"],
-                               capture_output=True, text=True, env={"PATH": os.environ.get("PATH", ""), "PYTHONNOUSERSITE": "1"})
+                               capture_output=True, text=True,
+                               env={k: v for k, v in os.environ.items() if k in ("PATH", "SYSTEMROOT")} | {"PYTHONNOUSERSITE": "1"})
         if probe.stdout.strip() == pinned:
             self.skipTest(f"mindslice {pinned} is installed for this interpreter")
         env = {"MINDSLICE_PLUGIN_WHEEL": str(self.tmp / "nope.whl"), "PYTHONNOUSERSITE": "1"}

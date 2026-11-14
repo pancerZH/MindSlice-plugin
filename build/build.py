@@ -92,7 +92,9 @@ class Upstream:
         commit = lock["commit"]
         if local is not None:
             try:
-                data = subprocess.run(["git", "-C", str(local), "archive", "--format=tar", commit],
+                # no eol conversion: Git for Windows defaults to core.autocrlf=true, which git archive applies
+                data = subprocess.run(["git", "-C", str(local), "-c", "core.autocrlf=false", "-c", "core.eol=lf",
+                                       "archive", "--format=tar", commit],
                                       check=True, capture_output=True).stdout
             except (OSError, subprocess.CalledProcessError) as exc:
                 raise BuildError(f"cannot archive {commit} from {local}: {exc}") from None
@@ -338,6 +340,12 @@ def build_target(name: str, up: Upstream, lock: dict[str, str]) -> Build:
                        "(one page per command, all from one snapshot).",
         "hooks": {cfg["hook_event"]: [{"hooks": hooks}]}}))
     out.add("bin/mindslice", (tdir / "bin" / "mindslice").read_bytes(), executable=True)
+    cmd_shim = tdir / "bin" / "mindslice.cmd"
+    if cmd_shim.is_file():
+        data = cmd_shim.read_bytes()
+        if b"\n" in data.replace(b"\r\n", b""):
+            raise BuildError(f"{cmd_shim} must use CRLF line endings (cmd.exe labels break otherwise)")
+        out.add("bin/mindslice.cmd", data)
     out.add("README.md", (tdir / "README.md").read_bytes())
 
     # skills
@@ -423,7 +431,7 @@ def compare(build: Build, root: Path) -> list[str]:
             diffs.append(f"unexpected: {path}")
         elif a.data != b.data:
             diffs.append(f"differs: {path}")
-        elif a.executable != b.executable:
+        elif a.executable != b.executable and os.name != "nt":  # Windows file systems keep no exec bit
             diffs.append(f"mode differs: {path}")
     return diffs
 

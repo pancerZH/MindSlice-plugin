@@ -6,4 +6,4 @@ Engine: [MindSlice](https://github.com/pancerZH/MindSlice) (installed from PyPI 
 
 ## Supported plugins
 
-- **Claude Code**: Linux, macOS ([plugins/claude](plugins/claude/README.md))
+- **Claude Code**: Linux, macOS, Windows (with Git for Windows; not yet verified) ([plugins/claude](plugins/claude/README.md))

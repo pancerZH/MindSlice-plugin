@@ -2,11 +2,18 @@
   "name": "mindslice",
   "version": "0.1.6-1",
   "description": "Portable long-term memory: isolated Markdown slices, standing memory in every session, controlled evolution.",
-  "author": {"name": "pancerZH"},
+  "author": {
+    "name": "pancerZH"
+  },
   "homepage": "https://github.com/pancerZH/MindSlice",
   "repository": "https://github.com/pancerZH/MindSlice-plugin",
   "license": "Apache-2.0",
-  "keywords": ["memory", "long-term memory", "mcp", "markdown"],
+  "keywords": [
+    "memory",
+    "long-term memory",
+    "mcp",
+    "markdown"
+  ],
   "userConfig": {
     "workspace": {
       "type": "directory",
@@ -19,13 +26,27 @@
       "default": false,
       "title": "Review every write",
       "description": "Send every change the agent makes to staging for your approval (recommended for small local models)."
+    },
+    "python": {
+      "type": "string",
+      "required": false,
+      "default": "python3",
+      "title": "Python command",
+      "description": "Command that starts Python 3.12 or newer for the MindSlice MCP server. Keep python3 on Linux and macOS; on Windows use py (the Python launcher) or the full path of python.exe."
     }
   },
   "mcpServers": {
     "mindslice": {
-      "command": "python3",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/adapter/entry.py", "mcp", "--workspace", "${user_config.workspace}"],
-      "env": {"MINDSLICE_PLUGIN_STAGE_WRITES": "${user_config.stage_writes}"}
+      "command": "${user_config.python}",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/adapter/entry.py",
+        "mcp",
+        "--workspace",
+        "${user_config.workspace}"
+      ],
+      "env": {
+        "MINDSLICE_PLUGIN_STAGE_WRITES": "${user_config.stage_writes}"
+      }
     }
   }
 }

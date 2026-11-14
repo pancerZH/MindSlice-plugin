@@ -100,11 +100,20 @@ def atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    for attempt in range(20):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:  # Windows: another process has the target open for a moment
+            if attempt == 19:
+                tmp.unlink(missing_ok=True)
+                raise
+            time.sleep(0.02)
 
 
 def bin_path() -> Path:
-    return PLUGIN_ROOT / "bin" / "mindslice"
+    """The CLI for the user's own terminal: the sh shim, or ``mindslice.cmd`` for cmd/PowerShell on Windows."""
+    return PLUGIN_ROOT / "bin" / ("mindslice.cmd" if os.name == "nt" else "mindslice")
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +322,8 @@ def preamble(path: Path) -> str:
             "always-loaded cards in full. Read every page: they are numbered page i/n with one snapshot id, and the "
             "last one ends with a \"complete\" line. You do not need manifest() for this content; call "
             "manifest(include_always=false) to browse the mounted slices.\n"
-            + driver.CLI_HINT)
+            + driver.CLI_HINT
+            + "".join("\n" + note for note in getattr(driver, "startup_notes", lambda: [])()))
 
 
 def pending_block(snap: dict[str, Any]) -> str | None:

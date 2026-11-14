@@ -16,6 +16,9 @@ TARGET = os.environ.get("MINDSLICE_PLUGIN_TARGET", "claude")
 PLUGIN = REPO / "plugins" / TARGET
 ENTRY = PLUGIN / "adapter" / "entry.py"
 BIN = PLUGIN / "bin" / "mindslice"
+WINDOWS = os.name == "nt"
+# How a user's terminal runs the plugin CLI: the sh shim, or mindslice.cmd from cmd/PowerShell on Windows.
+SHIM = [str(PLUGIN / "bin" / "mindslice.cmd")] if WINDOWS else [str(BIN)]
 
 if str(PLUGIN / "adapter") not in sys.path:
     sys.path.insert(0, str(PLUGIN / "adapter"))
@@ -43,7 +46,7 @@ ENGINE = _engine()
 sys.path.insert(0, str(ENGINE))
 
 # Variables that would point a test at the developer's real memory.
-SCRUB = ("MINDSLICE_PLUGIN_WHEEL", "MINDSLICE_WORKSPACE", "MINDSLICE_PLUGIN_WORKSPACE", "MINDSLICE_PLUGIN_ISOLATE", "CLAUDE_PLUGIN_OPTION_WORKSPACE",
+SCRUB = ("MINDSLICE_PLUGIN_WHEEL", "MINDSLICE_PLUGIN_PYTHON", "CLAUDE_PLUGIN_OPTION_PYTHON", "MINDSLICE_WORKSPACE", "MINDSLICE_PLUGIN_WORKSPACE", "MINDSLICE_PLUGIN_ISOLATE", "CLAUDE_PLUGIN_OPTION_WORKSPACE",
          "CLAUDE_PLUGIN_DATA", "CLAUDE_ENV_FILE", "MINDSLICE_PLUGIN_STAGE_WRITES", "CLAUDE_PLUGIN_OPTION_STAGE_WRITES")
 
 
@@ -51,7 +54,7 @@ class PluginTestCase(unittest.TestCase):
     """A temporary plugin data dir and a clean environment per test."""
 
     def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
+        self._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.tmp = Path(self._tmp.name)
         self._env = dict(os.environ)
         for k in SCRUB:
@@ -59,6 +62,7 @@ class PluginTestCase(unittest.TestCase):
         os.environ["CLAUDE_PLUGIN_DATA"] = str(self.tmp / "data")
         os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
         os.environ["MINDSLICE_PLUGIN_ENGINE_DIR"] = str(ENGINE)  # subprocesses: no download per test
+        os.environ["MINDSLICE_PLUGIN_PYTHON"] = sys.executable  # the shims run the interpreter under test
 
     def tearDown(self) -> None:
         os.environ.clear()

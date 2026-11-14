@@ -26,11 +26,18 @@
       "default": false,
       "title": "Review every write",
       "description": "Send every change the agent makes to staging for your approval (recommended for small local models)."
+    },
+    "python": {
+      "type": "string",
+      "required": false,
+      "default": "python3",
+      "title": "Python command",
+      "description": "Command that starts Python 3.12 or newer for the MindSlice MCP server. Keep python3 on Linux and macOS; on Windows use py (the Python launcher) or the full path of python.exe."
     }
   },
   "mcpServers": {
     "mindslice": {
-      "command": "python3",
+      "command": "${user_config.python}",
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/adapter/entry.py",
         "mcp",

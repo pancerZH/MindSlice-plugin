@@ -3,6 +3,9 @@
 #
 #   tests/acceptance_claude.sh            # uses --plugin-dir plugins/claude
 #   MODEL=sonnet tests/acceptance_claude.sh
+#   PYTHON=py tests/acceptance_claude.sh  # the Python for the script's own helpers (default: py on Windows, else python3)
+#
+# Windows: run it from Git Bash (Git for Windows), with Claude Code and Python 3.12+ installed.
 #
 # The plugin's `workspace` option cannot be set for a --plugin-dir session (PLAN Q1), so its MCP server does not
 # load here (F9); the hooks and the CLI resolve the workspace through $MINDSLICE_WORKSPACE, their last fallback.
@@ -11,11 +14,18 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-PLUGIN="$REPO/plugins/claude"
 MODEL="${MODEL:-haiku}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-export PYTHONDONTWRITEBYTECODE=1 CLAUDE_PLUGIN_DATA="$WORK/data"
+if [ "${OS:-}" = Windows_NT ]; then
+  PY="${PYTHON:-py}"
+  # native programs (claude, python) need C:/... paths, also in environment variables
+  REPO="$(cygpath -m "$REPO")"; WORK="$(cygpath -m "$WORK")"
+else
+  PY="${PYTHON:-python3}"
+fi
+PLUGIN="$REPO/plugins/claude"
+export PYTHONDONTWRITEBYTECODE=1 PYTHONIOENCODING=utf-8 CLAUDE_PLUGIN_DATA="$WORK/data"
 unset MINDSLICE_PLUGIN_WORKSPACE MINDSLICE_PLUGIN_ISOLATE CLAUDE_PLUGIN_OPTION_WORKSPACE || true
 mkdir -p "$WORK/proj"
 fail=0
@@ -23,7 +33,7 @@ pass() { echo "PASS $*"; }
 bad() { echo "FAIL $*"; fail=1; }
 
 MS="$PLUGIN/bin/mindslice"  # the plugin's own CLI: also installs the pinned engine into $CLAUDE_PLUGIN_DATA
-FILLER="$(python3 -c 'print("这是一条常驻规则的填充内容，用于撑大启动页。" * 180)')"
+FILLER="$("$PY" -c 'print("这是一条常驻规则的填充内容，用于撑大启动页。" * 180)')"
 seed() {  # seed <workspace> <filler cards> <phrase>
   "$MS" init "$1" > /dev/null
   for i in $(seq -w 0 $(($2 - 1))); do
@@ -40,17 +50,17 @@ ask() {  # ask <workspace> <out.jsonl> <prompt> [extra claude args...]
      --output-format stream-json --verbose "$@" < /dev/null > "$out" 2> "$out.err") || true
 }
 
-result() { python3 -c 'import json,sys
-for l in open(sys.argv[1]):
+result() { "$PY" -c 'import json,sys
+for l in open(sys.argv[1], encoding="utf-8"):
     m=json.loads(l)
     if m.get("type")=="result": print(m.get("result") or "")' "$1"; }
-session() { python3 -c 'import json,sys
-for l in open(sys.argv[1]):
+session() { "$PY" -c 'import json,sys
+for l in open(sys.argv[1], encoding="utf-8"):
     m=json.loads(l)
     if m.get("session_id"): print(m["session_id"]); break' "$1"; }
-hook_outputs() { python3 -c 'import json,sys
+hook_outputs() { "$PY" -c 'import json,sys
 n=0
-for l in open(sys.argv[1]):
+for l in open(sys.argv[1], encoding="utf-8"):
     m=json.loads(l)
     if m.get("subtype")=="hook_response" and str(m.get("hook_name","")).startswith("SessionStart:"+sys.argv[2]): n+=1
 print(n)' "$1" "$2"; }
@@ -76,7 +86,8 @@ if result "$WORK/2b.jsonl" | grep -q "SQUID-8842"; then pass "2 phrase after com
 "$MS" init "$WORK/proj/localws" > /dev/null
 ask "$WORK/ws" "$WORK/3.jsonl" "Run exactly these two Bash commands and print their full output: 1) mindslice plugin-status 2) cd localws && mindslice --json status" --allowedTools "Bash(mindslice:*),Bash(cd localws && mindslice --json status)"
 out3="$(result "$WORK/3.jsonl")"
-if grep -q "$WORK/ws" <<<"$out3" && grep -q "localws" <<<"$out3"; then pass "3 CLI routing"; else bad "3 CLI routing: $out3"; fi
+# match by directory name: Windows prints C:\...\ws, the script knows C:/.../ws
+if grep -Eq "[/\\]ws([^A-Za-z0-9_-]|$)" <<<"$out3" && grep -q "localws" <<<"$out3"; then pass "3 CLI routing"; else bad "3 CLI routing: $out3"; fi
 
 # 4. unconfigured, and a non-empty folder that is not a workspace
 ask "" "$WORK/4a.jsonl" "Without calling any tool: is your MindSlice memory loaded? If not, quote the reason you were given." "${NO_TOOLS[@]}"

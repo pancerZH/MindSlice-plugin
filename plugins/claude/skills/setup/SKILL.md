@@ -35,10 +35,15 @@ MCP entry point.
 - **`mindslice: command not found`**: the plugin is not enabled in this session (or the session predates the
   install). Ask the user to run `/plugin`, check that `mindslice` is installed and enabled, and start a new
   session.
-- **Python error** (`needs Python >= 3.12`): help the user install Python 3.12 or newer (Homebrew, the
-  distribution's package, `uv python install 3.12`, or pyenv); the plugin finds `python3.12`/`python3.13` on
-  `PATH`, in `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin` and `~/.pyenv/shims`. Then start a new
-  session.
+- **Python error** (`needs Python >= 3.12`, or `no Python found`): help the user install Python 3.12 or newer
+  (Homebrew, the distribution's package, `uv python install 3.12`, or pyenv; on Windows the python.org
+  installer). The plugin finds `python3.12`/`python3.13` on `PATH`, in `/opt/homebrew/bin`, `/usr/local/bin`,
+  `~/.local/bin` and `~/.pyenv/shims`, and on Windows every interpreter the `py` launcher lists. Then start a
+  new session.
+- **Windows: the `mcp__plugin_mindslice_mindslice__*` tools are missing** although the startup pages arrived:
+  the MCP server starts with the plugin option "Python command" (default `python3`, which usually does not
+  run on Windows). Have the user set it to `py` (Step 3) and start a new session. Windows needs Git for
+  Windows: without Git Bash, Claude Code runs hooks in PowerShell, which the plugin does not support yet.
 - **"the MindSlice engine ... is not installed yet"**: the first session could not download the pinned engine
   from PyPI (offline, proxy, firewall). Show the user the reason; with their agreement, fix the network or
   proxy, or run the `pip install --user mindslice==<version>` command the message names, then start a new
@@ -88,6 +93,11 @@ The plugin's MCP server and hooks read the workspace from the plugin option **"M
 
 Turn on **"Review every write"** (`stage_writes`) when the user runs a small local model, so every write
 waits for their review.
+
+**On Windows**, also set **"Python command"** (`python`) to `py`, or to the full path of a Python 3.12+
+`python.exe`: Claude Code starts the MCP server with this command, and the default `python3` usually does not
+exist on Windows (or is the Microsoft Store placeholder). With the command above, pass both values:
+`{"workspace": "<workspace>", "python": "py"}`. Keep the default on Linux and macOS.
 
 What the plugin does with the folder at the next session start:
 
@@ -179,6 +189,10 @@ mkdir -p ~/.local/bin && ln -sf "$(command -v mindslice)" ~/.local/bin/mindslice
 
 The link points into the plugin's versioned cache directory, so it must be recreated after a plugin update.
 Skip it when the user already has a `mindslice` installed from PyPI or a checkout.
+
+On Windows, Git Bash can use the same link. For cmd and PowerShell, give the user the full path of the
+plugin's `mindslice.cmd` instead (`cygpath -w "$(command -v mindslice).cmd"` in the Bash tool prints it); it
+also moves with each plugin update.
 
 ## Migrating from a manual MindSlice setup
 

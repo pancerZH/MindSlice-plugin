@@ -92,35 +92,53 @@ def _unpack(data: bytes, dest: Path) -> None:
 
 
 class _Lock:
-    """Exclusive advisory lock (released by the kernel if the process dies); a no-op where fcntl is missing."""
+    """Exclusive lock on a file, released by the OS if the process dies: ``fcntl.flock`` on POSIX, a one-byte
+    ``msvcrt.locking`` range on Windows."""
 
     def __init__(self, path: Path, timeout: float) -> None:
         self.path, self.timeout, self.fd = path, timeout, None
 
-    def __enter__(self) -> "_Lock":
+    def _try(self) -> bool:
         try:
-            import fcntl
-        except ImportError:  # pragma: no cover - Windows (unsupported host OS for now)
-            return self
+            if os.name == "nt":
+                import msvcrt
+
+                os.lseek(self.fd, 0, os.SEEK_SET)
+                msvcrt.locking(self.fd, msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except OSError:
+            return False
+
+    def __enter__(self) -> "_Lock":
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o644)
         deadline = time.monotonic() + self.timeout
-        while True:
-            try:
-                fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                return self
-            except OSError:
-                if time.monotonic() >= deadline:
-                    os.close(self.fd)
-                    self.fd = None
-                    raise EngineUnavailable("timed out waiting for another plugin process to install the "
-                                            "MindSlice engine; start a new session") from None
-                time.sleep(0.05)
+        while not self._try():
+            if time.monotonic() >= deadline:
+                os.close(self.fd)
+                self.fd = None
+                raise EngineUnavailable("timed out waiting for another plugin process to install the "
+                                        "MindSlice engine; start a new session")
+            time.sleep(0.05)
+        return self
 
     def __exit__(self, *exc: object) -> None:
-        if self.fd is not None:
-            os.close(self.fd)  # closing releases the flock
-            self.fd = None
+        if self.fd is None:
+            return
+        if os.name == "nt":
+            import msvcrt
+
+            try:
+                os.lseek(self.fd, 0, os.SEEK_SET)
+                msvcrt.locking(self.fd, msvcrt.LK_UNLCK, 1)
+            except OSError:
+                pass
+        os.close(self.fd)  # on POSIX, closing releases the flock
+        self.fd = None
 
 
 def _help(spec: dict[str, Any], problem: str) -> str:
@@ -159,6 +177,8 @@ def ensure_engine(spec: dict[str, Any], data_dir: Path) -> Path | None:
                 shutil.rmtree(path)
             os.replace(tmp, path)
         except OSError as exc:
+            if _ready(path, spec):  # someone else completed it (only possible if locking failed)
+                return path
             raise EngineUnavailable(_help(spec, f"could not be unpacked into {root}: {exc}")) from None
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

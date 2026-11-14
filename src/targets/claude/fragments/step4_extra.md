@@ -26,3 +26,7 @@ mkdir -p ~/.local/bin && ln -sf "$(command -v mindslice)" ~/.local/bin/mindslice
 
 The link points into the plugin's versioned cache directory, so it must be recreated after a plugin update.
 Skip it when the user already has a `mindslice` installed from PyPI or a checkout.
+
+On Windows, Git Bash can use the same link. For cmd and PowerShell, give the user the full path of the
+plugin's `mindslice.cmd` instead (`cygpath -w "$(command -v mindslice).cmd"` in the Bash tool prints it); it
+also moves with each plugin update.

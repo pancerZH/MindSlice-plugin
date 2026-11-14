@@ -23,6 +23,12 @@ Start a new session, then run `/mindslice:setup` to seed the memory and verify t
 Requirements: Python 3.12 or newer somewhere on the machine (`python3.12`/`python3.13` on `PATH`, Homebrew,
 `~/.local/bin` or pyenv are found automatically). Supported on Linux, macOS and WSL.
 
+**Windows** (native, not yet verified end to end): install [Git for Windows](https://git-scm.com/downloads/win)
+(Claude Code runs the plugin's hooks and the `mindslice` command in Git Bash) and Python 3.12+ from
+python.org, then set the plugin option **Python command** to `py` (or the full path of `python.exe`): Claude
+Code starts the MCP server with it, and the default `python3` usually does not exist on Windows. Without Git
+Bash, Claude Code falls back to PowerShell, which this plugin does not support yet.
+
 The plugin does not bundle the MindSlice engine. In the first session it downloads the pinned release from
 PyPI (`mindslice==0.1.6`, a 150 KB pure-Python wheel with no dependencies), checks its sha256 and unpacks it
 into the plugin's data directory, where it stays across plugin updates. That first session needs internet
@@ -41,9 +47,9 @@ to the file.
 | `/mindslice:review` | show staged memory changes and apply or discard the ones you approve |
 | `/mindslice:slice-maintainer` | consolidate memory and bake reusable slices |
 
-Options (`/plugin` → mindslice → Configure options): **Memory workspace**, and **Review every write**
-(stage every agent write for your approval; recommended for small local models). Option changes apply to
-new sessions.
+Options (`/plugin` → mindslice → Configure options): **Memory workspace**; **Review every write** (stage
+every agent write for your approval; recommended for small local models); **Python command** (default
+`python3`; `py` on Windows). Option changes apply to new sessions.
 
 ## Commands
 
@@ -58,7 +64,8 @@ mindslice doctor          # full engine checks
 ```
 
 To use it in your own terminal, link it: `ln -sf "$(command -v mindslice)" ~/.local/bin/mindslice` (run in
-the Bash tool; recreate after a plugin update).
+the Bash tool; recreate after a plugin update). On Windows, cmd and PowerShell use `bin\mindslice.cmd` in the
+plugin directory (`cygpath -w "$(command -v mindslice).cmd"` in the Bash tool prints its path).
 
 For nested sessions that must not see your personal memory (for example MindSlice-forge's `claude -p`
 runs), set `MINDSLICE_PLUGIN_ISOLATE=1` in their environment.

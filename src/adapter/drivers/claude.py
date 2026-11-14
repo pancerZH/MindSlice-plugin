@@ -1,9 +1,14 @@
 """Claude Code driver: where Claude puts plugin data and options, and how its SessionStart hooks deliver pages.
 
-Hooks: ``hooks/hooks.json`` runs ``entry.py hook <slot>`` for slots 1..K in one matcher-less ``SessionStart``
-group (startup, resume, clear, compact). Claude runs them in parallel and adds each one's plain-text stdout to
-the context (up to 10,000 characters each), so slot ``i`` prints page ``i`` of one shared snapshot. Slot 1 also
-exports ``MINDSLICE_PLUGIN_WORKSPACE`` through ``$CLAUDE_ENV_FILE`` for the Bash tool.
+Hooks: ``hooks/hooks.json`` runs ``sh bin/mindslice hook <slot>`` for slots 1..K in one matcher-less
+``SessionStart`` group (startup, resume, clear, compact); the shim picks a Python (``py`` first on Windows), so
+hooks need no configuration. Claude runs them in parallel (``sh -c`` on macOS/Linux, Git Bash on Windows) and
+adds each one's plain-text stdout to the context (up to 10,000 characters each), so slot ``i`` prints page ``i``
+of one shared snapshot. Slot 1 also exports ``MINDSLICE_PLUGIN_WORKSPACE`` and ``MINDSLICE_PLUGIN_PYTHON`` (the
+verified interpreter) through ``$CLAUDE_ENV_FILE`` for the Bash tool.
+
+The MCP server is started directly by Claude with the ``python`` plugin option (default ``python3``): on Windows,
+where ``python3`` is usually missing or the Microsoft Store placeholder, the user sets it to ``py``.
 """
 
 from __future__ import annotations
@@ -11,6 +16,8 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -53,19 +60,50 @@ def _hook_input() -> dict:
     return value if isinstance(value, dict) else {}
 
 
-def _export_workspace(path: Path) -> None:
+def env_lines(workspace: Path) -> str:
+    """What slot 1 adds to ``$CLAUDE_ENV_FILE``: plain ``export NAME='value'`` lines (forward slashes, so Git Bash
+    on Windows can run the interpreter path as is)."""
+    python = Path(sys.executable).as_posix()
+    return (f"export MINDSLICE_PLUGIN_WORKSPACE={shlex.quote(str(workspace))}\n"
+            f"export MINDSLICE_PLUGIN_PYTHON={shlex.quote(python)}\n")
+
+
+def _export_env(workspace: Path) -> None:
     env_file = _env("CLAUDE_ENV_FILE")
     if not env_file:
         return
-    line = f"export MINDSLICE_PLUGIN_WORKSPACE={shlex.quote(str(path))}\n"
+    block = env_lines(workspace)
     try:
         target = Path(env_file)
-        if target.is_file() and target.read_text(encoding="utf-8").endswith(line):
+        if target.is_file() and target.read_text(encoding="utf-8").endswith(block):
             return
         with open(target, "a", encoding="utf-8") as fh:
-            fh.write(line)
+            fh.write(block)
     except OSError:
         pass
+
+
+def _python_ok(command: str) -> bool:
+    exe = shutil.which(command)
+    if not exe:
+        return False
+    try:
+        return subprocess.run([exe, "-c", "import sys; sys.exit(sys.version_info < (3, 8))"], timeout=10,
+                              stdin=subprocess.DEVNULL, capture_output=True).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def startup_notes() -> list[str]:
+    """Windows only: the MCP server is started with the ``python`` option (default ``python3``), which usually
+    does not exist there. Say how to fix it if the tools are missing (the option may be set without the hook
+    seeing it, so the note is conditional)."""
+    if os.name != "nt" or _env("CLAUDE_PLUGIN_OPTION_PYTHON") or _python_ok("python3"):
+        return []
+    return ["On Windows the plugin's MCP server starts with the \"Python command\" plugin option, which defaults "
+            "to `python3`, and `python3` does not run here. If the mcp__plugin_mindslice_mindslice__* tools are "
+            "missing in this session, tell the user to set that option to `py` (or the full path of python.exe) "
+            "via /plugin and start a new session."]
 
 
 def run_hook(args: list[str]) -> int:
@@ -86,7 +124,7 @@ def run_hook(args: list[str]) -> int:
     session = str(info.get("session_id") or f"ppid-{os.getppid()}")
     result = core.hook_pages(session, int(cfg["page_limit"]), slots)
     if slot == 1 and result.workspace is not None:
-        _export_workspace(result.workspace)
+        _export_env(result.workspace)
     if slot <= len(result.pages):
         out = result.pages[slot - 1]
         sys.stdout.buffer.write(out.encode("utf-8"))

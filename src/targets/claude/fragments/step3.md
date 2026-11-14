@@ -13,6 +13,11 @@ The plugin's MCP server and hooks read the workspace from the plugin option **"M
 Turn on **"Review every write"** (`stage_writes`) when the user runs a small local model, so every write
 waits for their review.
 
+**On Windows**, also set **"Python command"** (`python`) to `py`, or to the full path of a Python 3.12+
+`python.exe`: Claude Code starts the MCP server with this command, and the default `python3` usually does not
+exist on Windows (or is the Microsoft Store placeholder). With the command above, pass both values:
+`{"workspace": "<workspace>", "python": "py"}`. Keep the default on Linux and macOS.
+
 What the plugin does with the folder at the next session start:
 
 | Folder | Result |

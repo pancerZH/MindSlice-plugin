@@ -94,7 +94,12 @@ class OutputTest(unittest.TestCase):
         for f in ("adapter/entry.py", "adapter/core.py", "adapter/driver.py", "adapter/provision.py", "bin/mindslice", "hooks/hooks.json",
                   ".claude-plugin/plugin.json", "LICENSE", "NOTICE", "skills/setup/SKILL.md", "skills/review/SKILL.md"):
             self.assertIn(f, files)
-        self.assertTrue(os.access(PLUGIN / "bin" / "mindslice", os.X_OK))
+        if os.name != "nt":
+            self.assertTrue(os.access(PLUGIN / "bin" / "mindslice", os.X_OK))
+        self.assertIn("bin/mindslice.cmd", files)
+        cmd = (PLUGIN / "bin" / "mindslice.cmd").read_bytes()
+        self.assertNotIn(b"\n", cmd.replace(b"\r\n", b""), "mindslice.cmd must be CRLF")
+        self.assertNotIn(b"\r", (PLUGIN / "bin" / "mindslice").read_bytes(), "the sh shim must be LF")
 
     def test_build_info_matches(self) -> None:
         info = json.loads((PLUGIN / ".build-info.json").read_text())
@@ -102,6 +107,14 @@ class OutputTest(unittest.TestCase):
         import hashlib
         for path, digest in info["files"].items():
             self.assertEqual(hashlib.sha256((PLUGIN / path).read_bytes()).hexdigest(), digest, path)
+
+    def test_no_bare_python3_in_launch_commands(self) -> None:
+        manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())
+        self.assertEqual(manifest["mcpServers"]["mindslice"]["command"], "${user_config.python}")
+        self.assertEqual(manifest["userConfig"]["python"]["default"], "python3")
+        hooks = json.loads((PLUGIN / "hooks" / "hooks.json").read_text())["hooks"]["SessionStart"][0]["hooks"]
+        for i, h in enumerate(hooks, 1):
+            self.assertEqual(h["command"], f'sh "${{CLAUDE_PLUGIN_ROOT}}/bin/mindslice" hook {i}')
 
     def test_manifest_version(self) -> None:
         manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())
