@@ -188,14 +188,12 @@ class HookTest(PluginTestCase):
 
     @only("claude")
     def test_launcher_follows_the_installed_version(self) -> None:
-        import driver
-
-        d = driver.write_launchers()
+        d = core.write_launchers()
         text = (d / "mindslice").read_text()
         self.assertIn((core.PLUGIN_ROOT / "adapter" / "entry.py").as_posix(), text)
         self.assertIn(Path(sys.executable).as_posix(), text)  # the interpreter the hook checked
         mtime = (d / "mindslice").stat().st_mtime_ns
-        driver.write_launchers()  # unchanged: not rewritten
+        core.write_launchers()  # unchanged: not rewritten
         self.assertEqual((d / "mindslice").stat().st_mtime_ns, mtime)
 
     @only("claude")
@@ -257,6 +255,22 @@ class HookTest(PluginTestCase):
         status = self.run_entry("plugin-status", cmd=self.shim())
         self.assertEqual(status.returncode, 1)
         self.assertIn(f"pages but only {MAX_PAGES} are delivered", status.stdout)
+
+    def test_status_warns_when_every_page_is_in_use(self) -> None:
+        # cards are never split across pages, so pages run out long before the units do
+        ws = self.tmp / "ws"
+        self.configure(ws)
+        core.ensure_workspace(core.resolve("hook"))
+        cfg = helpers.target_config()
+        body = "- " + "规" * int(cfg["page_limit"] * 0.55)  # one such card per page
+        for i in range(cfg["hook_slots"]):
+            write_always(ws, f"half/h{i}", body)
+            if core.compute_delivery(ws, cfg["page_limit"], cfg["hook_slots"]).needed_pages == cfg["hook_slots"]:
+                break
+        report, code = core.status_report(str(ws))
+        self.assertEqual((code, report["pages_needed"]), (0, cfg["hook_slots"]), report)
+        self.assertLess(report["usage_percent"], 75)
+        self.assertIn(f"fills all {cfg['hook_slots']} startup pages", " ".join(report["warnings"]))
 
     def test_plugin_status_after_global_options(self) -> None:
         ws = self.tmp / "plugin-status"  # a path that looks like the subcommand must not confuse routing
@@ -369,7 +383,7 @@ class CliRoutingTest(PluginTestCase):
         # the Bash tool and the user's terminal: no CLAUDE_PLUGIN_ROOT, no CLAUDE_PLUGIN_DATA
         import driver
 
-        d = driver.write_launchers() if CLAUDE or helpers.CODEX else driver.launcher_dir()
+        d = core.write_launchers() if CLAUDE or helpers.CODEX else driver.launcher_dir()
         launcher = d / ("mindslice.cmd" if WINDOWS else "mindslice")
         env = {k: v for k, v in os.environ.items() if k not in (ROOT_ENV, DATA_ENV)}
         env["HOME"] = env["USERPROFILE"] = str(self.tmp)

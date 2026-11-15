@@ -1,6 +1,6 @@
 {
   "target": "antigravity",
-  "plugin_version": "0.1.6-1",
+  "plugin_version": "0.1.6-2",
   "engine_version": "0.1.6",
   "page_limit": 15500,
   "hook_slots": 8,

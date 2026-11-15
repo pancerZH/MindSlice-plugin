@@ -1,11 +1,10 @@
-Run `<mindslice_bin> plugin-status` with the shell tool (escalated: it reads the workspace and the plugin's
-data folder). It prints the configured workspace, the engine version, how much of the startup capacity the
+Run `<mindslice_bin> plugin-status` with the shell tool. It prints the configured workspace, the engine version, how much of the startup capacity the
 standing memory uses, and the result of a handshake with the plugin's own MCP entry point.
 
 - **No "MindSlice standing memory" pages in this session** (no `[MindSlice standing memory · page 1/n]` text
-  in your context, and no `[MindSlice plugin: ...]` notice): Codex skips plugin hooks until the user trusts
-  them. Ask the user to run `/hooks` in Codex, review the MindSlice `SessionStart` hooks (they run
-  `adapter/hook.py` from the plugin folder) and trust them; Codex asks again after every plugin update, because
+  in your context, and no `[MindSlice plugin: ...]` notice): Codex skips a plugin's hooks until the user trusts
+  them. Ask the user to run `/hooks` in Codex, review the MindSlice `SessionStart` hook (it runs
+  `adapter/hook.py` from the plugin folder) and trust it; Codex asks again after every plugin update, because
   the trusted definition changed. Until then, use `<plugin root>/bin/mindslice` (see the placeholders above).
   If the MCP tools are missing too, the plugin is not installed or not enabled: ask the user to open
   `/plugins`, check that `mindslice` is installed and enabled, and start a new session.

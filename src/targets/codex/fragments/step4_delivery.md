@@ -1,1 +1,1 @@
-(the plugin's `SessionStart` hooks deliver it on every start, resume, clear, fork and compaction, once the user has trusted them; the MCP server's instructions tell the model to call `manifest` if the pages are missing)
+(the plugin's `SessionStart` hook delivers it on every start, resume, clear, fork and compaction, once the user has trusted it; the MCP server's instructions tell the model to call `manifest` if the pages are missing)

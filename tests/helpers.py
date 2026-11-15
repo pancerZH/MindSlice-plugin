@@ -98,12 +98,13 @@ class PluginTestCase(unittest.TestCase):
         self._tmp.cleanup()
 
     def shim(self) -> list[str]:
-        """How the agent's shell tool and a user's terminal run the plugin CLI. Claude and Codex: the launcher slot 1
-        writes to <plugin data>/bin. Antigravity: the plugin's own bin/ (mindslice.cmd from cmd/PowerShell on
+        """How the agent's shell tool and a user's terminal run the plugin CLI. Claude and Codex: the launcher the
+        hook writes to <plugin data>/bin. Antigravity: the plugin's own bin/ (mindslice.cmd from cmd/PowerShell on
         Windows)."""
+        import core
         import driver
 
-        d = driver.write_launchers() if CLAUDE or CODEX else driver.launcher_dir()
+        d = core.write_launchers() if CLAUDE or CODEX else driver.launcher_dir()
         return [str(d / ("mindslice.cmd" if WINDOWS else "mindslice"))]
 
     def configure(self, workspace: Path | str | None) -> None:
@@ -137,19 +138,24 @@ class PluginTestCase(unittest.TestCase):
 
     def hook(self, slot: int = 1, session: str = "s1", **kw) -> subprocess.CompletedProcess:
         """Run the session-start hook as the host does; ``stdout`` is the text of page ``slot`` ("" if none).
-        Claude runs one process per slot; Codex too, through adapter/hook.py, which prints the page as JSON;
-        Antigravity runs adapter/hook.py once and gets every page as JSON."""
+        Claude runs one process per slot. Antigravity and Codex run adapter/hook.py once and get every page as
+        JSON: Antigravity one system message per page, Codex all pages in one additional context (``raw`` is what
+        the hook printed, ``context`` that text, ``pages`` its pages)."""
         import json
+        import re
 
         if CODEX:
-            r = self.run_entry(str(slot), stdin=json.dumps({"session_id": session, "source": "startup",
-                                                            "hook_event_name": "SessionStart"}),
+            r = self.run_entry(stdin=json.dumps({"session_id": session, "source": "startup",
+                                                 "hook_event_name": "SessionStart"}),
                                cmd=[sys.executable, str(PLUGIN / "adapter" / "hook.py")], **kw)
-            r.raw = r.stdout  # type: ignore[attr-defined]
+            r.raw, context = r.stdout, ""  # type: ignore[attr-defined]
             if r.stdout.strip():
                 out = json.loads(r.stdout)["hookSpecificOutput"]
                 assert out["hookEventName"] == "SessionStart", out
-                r.stdout = out["additionalContext"]
+                context = out["additionalContext"]
+            pages = re.split(r"\n\n(?=\[MindSlice standing memory · page \d+/\d+ · snapshot [0-9a-f]{8}\])", context)
+            r.context, r.pages = context, [p for p in pages if p]  # type: ignore[attr-defined]
+            r.stdout = r.pages[slot - 1] if slot <= len(r.pages) else ""
             return r
         if CLAUDE:
             return self.run_entry("hook", str(slot), stdin=json.dumps({"session_id": session, "source": "startup"}),

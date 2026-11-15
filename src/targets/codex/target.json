@@ -7,9 +7,9 @@
   "page_limit": 9500,
   "hook_slots": 4,
   "hook_event": "SessionStart",
-  "hook_command": "python3 \"${PLUGIN_ROOT}/adapter/hook.py\" {slot} || py \"${PLUGIN_ROOT}/adapter/hook.py\" {slot} || python \"${PLUGIN_ROOT}/adapter/hook.py\" {slot}",
+  "hook_command": "python3 \"${PLUGIN_ROOT}/adapter/hook.py\" || py \"${PLUGIN_ROOT}/adapter/hook.py\" || python \"${PLUGIN_ROOT}/adapter/hook.py\"",
   "hook_timeout": 60,
-  "hook_context_limit": 32000,
+  "hook_context_limit": 64000,
   "skills": {
     "setup": true,
     "review": true,

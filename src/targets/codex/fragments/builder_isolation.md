@@ -8,6 +8,6 @@ through `env`:
 --harness-cmd 'env MINDSLICE_PLUGIN_ISOLATE=1 codex exec {message}'
 ```
 
-With `MINDSLICE_PLUGIN_ISOLATE=1` the plugin's hooks print nothing, its MCP server exposes no tools, and the
+With `MINDSLICE_PLUGIN_ISOLATE=1` the plugin's hook prints nothing, its MCP server exposes no tools, and the
 `mindslice` command no longer falls back to the plugin's workspace (it stays available for Forge's own
 calls with `-w`).

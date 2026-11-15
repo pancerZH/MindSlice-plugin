@@ -38,10 +38,6 @@ NAME = "antigravity"
 reinjects_on_compact = False  # no hook fires after compaction
 options_reach_hooks = False  # the workspace variable reaches only the MCP server
 REVIEW_COMMAND = "/mindslice:review"
-CLI_HINT = ("The `mindslice` CLI is on the PATH of your terminal tool (run_command) and uses this workspace by "
-            "default (pass -w for another one); management commands (status, diff, apply, discard, mount, bake, "
-            "doctor) are CLI-only. Run `mindslice apply` or `discard` only when the user approves it explicitly "
-            "(see /mindslice:review).")
 
 PERMISSION_HINT = ("Access to the memory workspace was denied. Antigravity's terminal sandbox does not let "
                    "commands read folders outside the project, so `mindslice` commands that use the workspace "
@@ -58,6 +54,19 @@ STAGE_WRITES_WARNING = "stage_writes_warning.txt"
 COLD_START_HINT = (" (If the MindSlice MCP tools `manifest`, `search`, `read`, `write` are available in this "
                    "conversation, the MCP server finished starting after the startup hook: call `manifest` with "
                    "`include_always=true` before you reply.)")
+
+
+def cli_hint() -> str:
+    return ("The `mindslice` CLI is on the PATH of your terminal tool (run_command) and uses this workspace by "
+            "default (pass -w for another one); management commands (status, diff, apply, discard, mount, bake, "
+            "doctor) are CLI-only. Run `mindslice apply` or `discard` only when the user approves it explicitly "
+            "(see /mindslice:review).")
+
+
+def setup_hint() -> str:
+    """How the user names the workspace (completes "To choose one, ..." and "Point the plugin at ... (...)")."""
+    return ("set \"Memory workspace\" in the plugin's settings (/plugin in the CLI, or the plugin's page in the "
+            "Antigravity app), or run /mindslice:setup for guided setup")
 
 
 def _clean(value: str | None) -> str | None:
@@ -129,34 +138,6 @@ def _invalid_workspace_message(raw: str, reason: str) -> str:
             "a new conversation.")
 
 
-def _validate_workspace(value: str) -> tuple[Path | None, str | None]:
-    import core
-
-    expanded = core.expand_home(value)
-    if not Path(expanded).is_absolute():
-        why = ("uses an unexpanded shell variable (use ~/... or a full path instead)"
-               if value.startswith(("$", "%")) else "is a relative path, not an absolute path")
-        return None, _invalid_workspace_message(value, why)
-    path = Path(os.path.abspath(expanded))
-    try:
-        resolved = path.resolve()
-    except OSError:
-        resolved = path
-    roots = [(PLUGIN_ROOT, "is inside the plugin installation folder (which plugin updates replace)"),
-             (REAL_PLUGIN_ROOT, "is inside the plugin installation folder (which plugin updates replace)")]
-    try:
-        data_dir = plugin_data_dir()
-        roots += [(data_dir, "is inside the plugin's internal data folder"),
-                  (data_dir.resolve(), "is inside the plugin's internal data folder")]
-    except OSError:
-        pass
-    for root, why in roots:
-        for candidate in (path, resolved):
-            if candidate == root or root in candidate.parents:
-                return None, _invalid_workspace_message(value, why)
-    return path, None
-
-
 def _clear_bridge() -> None:
     import core
 
@@ -200,7 +181,8 @@ def _record_setting(value: str) -> str:
     MINDSLICE_WORKSPACE and silently serve (and record in the bridge) a workspace the user did not choose."""
     import core
 
-    path, err = _validate_workspace(value)
+    path, why = core.check_workspace_setting(value)
+    err = None if why is None else _invalid_workspace_message(value, why)
     if err is not None or path is None:
         try:
             core.atomic_write(core.bridge_path(),
@@ -259,16 +241,6 @@ def launcher_dir() -> Path:
     return PLUGIN_ROOT / "bin"
 
 
-def _hook_input() -> dict:
-    if sys.stdin is None or sys.stdin.isatty():
-        return {}
-    try:
-        value = json.loads(sys.stdin.read() or "{}")
-    except (ValueError, OSError):
-        return {}
-    return value if isinstance(value, dict) else {}
-
-
 def _await_bridge() -> None:
     """The MCP server writes the bridge file once it has read the workspace setting; at the very first session it may
     still be starting (or installing the engine) when the hook runs."""
@@ -318,7 +290,7 @@ def run_hook(args: list[str]) -> int:
         sys.stdout.write("{}\n")
         return 0
     cfg = core.target_config()
-    info = _hook_input()
+    info = core.hook_input()
     session = str(info.get("conversationId") or _clean(os.environ.get("ANTIGRAVITY_CONVERSATION_ID"))
                   or f"ppid-{os.getppid()}")
     _await_bridge()

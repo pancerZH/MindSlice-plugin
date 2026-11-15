@@ -126,8 +126,8 @@ session:
   session, then removed), a real memory lookup, and the standing memory after a compaction.
 
 Before them, run `<mindslice_bin> plugin-status`: it renders the startup pages the plugin's hook delivers,
-reports their size against the startup capacity (a warning from 75%, an error when cards no longer fit) and
-checks the plugin's MCP entry point. Fix any error it prints.
+reports their size against the startup capacity (a warning from 75% or when every page is in use, an error
+when cards no longer fit) and checks the plugin's MCP entry point. Fix any error it prints.
 
 **Start the new session yourself when the harness can.** Most command-line harnesses have a
 one-shot, non-interactive mode that takes a prompt and prints the reply (see the harness's `--help`).

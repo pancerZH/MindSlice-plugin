@@ -9,7 +9,7 @@ Use this skill for deliberate maintenance and consolidation in an existing works
 agent writes already receive guidance from the MCP server. For building one or more new slices from source
 files or a long document, use [slice-builder](https://github.com/pancerZH/MindSlice/blob/e2b85ad0df537fa862ec555f3ba5c43c59554b44/skills/slice-builder/SKILL.md).
 
-Commands use the plugin's `mindslice` CLI, which is not on the shell's `PATH`: call it by the absolute path the standing memory pages give (typically `~/.codex/plugins/data/mindslice-mindslice/bin/mindslice`). It targets the plugin's workspace unless you pass `-w <workspace>` or run it inside another MindSlice workspace. Codex's sandbox keeps shell commands from writing outside the project, so run the commands that use the workspace with escalated permissions (the user approves them). All operations have Python `Workspace` methods; MCP exposes only
+Commands use the plugin's `mindslice` CLI, by the absolute path the standing memory pages give (it is not on the shell's `PATH`) and with escalated permissions, as those pages say; it targets the plugin's workspace unless you pass `-w <workspace>` or run it inside another MindSlice workspace. All operations have Python `Workspace` methods; MCP exposes only
 `manifest`, `search`, `read` and `write`, so management operations need CLI or Python access.
 
 When authoring or rewriting cards, read the shared

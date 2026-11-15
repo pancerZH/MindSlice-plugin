@@ -1,4 +1,4 @@
-"""Codex target: layout, hook JSON per slot, the data directory the MCP server derives, plugin-config, launchers.
+"""Codex target: layout, the hook's JSON, the data directory the MCP server derives, plugin-config, launchers.
 
 Runs when the suite targets Codex: ``MINDSLICE_PLUGIN_TARGET=codex python3 -m unittest ...``. What these tests
 encode was measured on Codex CLI 0.169.0 (see the driver's docstring); ``tests/acceptance_codex.sh`` checks it
@@ -16,7 +16,6 @@ import shutil
 import subprocess
 import sys
 import unittest
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest import mock
 
@@ -34,9 +33,11 @@ def load(path: str) -> dict:
     return json.loads((PLUGIN / path).read_text(encoding="utf-8"))
 
 
-def hooks() -> list[dict]:
+def hook_handler() -> dict:
+    """The plugin's one hook: the user trusts each handler separately, and again after every update."""
     (group,) = load("hooks/hooks.json")["hooks"]["SessionStart"]
-    return group["hooks"]
+    (handler,) = group["hooks"]
+    return handler
 
 
 @only("codex")
@@ -79,17 +80,15 @@ class LayoutTest(unittest.TestCase):
 
     def test_hooks_json(self) -> None:
         cfg = helpers.target_config()
-        handlers = hooks()
-        self.assertEqual(len(handlers), cfg["hook_slots"])
         self.assertNotIn("matcher", load("hooks/hooks.json")["hooks"]["SessionStart"][0])  # every source
-        for i, h in enumerate(handlers, 1):
-            self.assertEqual(h["type"], "command")
-            runs = re.findall(r'(\S+) "\$\{PLUGIN_ROOT\}/adapter/hook\.py" (\d+)', h["command"])
-            self.assertEqual([r[0] for r in runs], ["python3", "py", "python"])
-            self.assertEqual({r[1] for r in runs}, {str(i)})
-            self.assertGreater(h["timeout"], 55)  # hook.py's own timeout
-            # Codex cuts a hook's context at ~2,500 tokens unless this raises it; a page may take a token per unit
-            self.assertGreaterEqual(h["additionalContextLimit"], 3 * cfg["page_limit"])
+        h = hook_handler()
+        self.assertEqual(h["type"], "command")
+        runs = re.findall(r'(\S+) "\$\{PLUGIN_ROOT\}/adapter/hook\.py"', h["command"])
+        self.assertEqual(runs, ["python3", "py", "python"])
+        self.assertGreater(h["timeout"], 55)  # hook.py's own timeout
+        # Codex cuts a hook's context at ~2,500 tokens unless this raises it. Measured: 38,000 CJK characters pass
+        # a limit of 32000; a token per UTF-16 unit of every page is a bound with room to spare.
+        self.assertGreaterEqual(h["additionalContextLimit"], cfg["hook_slots"] * cfg["page_limit"])
 
     def test_line_endings_and_modes(self) -> None:
         for f in ("adapter/mcp.cmd", "bin/mindslice.cmd"):
@@ -126,7 +125,7 @@ class HookTest(PluginTestCase):
         self.configure(ws)
         project = self.tmp / "project"
         project.mkdir()
-        command = hooks()[0]["command"].replace("${PLUGIN_ROOT}", str(PLUGIN))
+        command = hook_handler()["command"].replace("${PLUGIN_ROOT}", str(PLUGIN))
         shell = ["cmd", "/c", command] if WINDOWS else ["sh", "-c", command]
         r = subprocess.run(shell, cwd=project, input=json.dumps({"session_id": "c1", "source": "startup"}),
                            capture_output=True, text=True, encoding="utf-8", timeout=120)
@@ -136,31 +135,36 @@ class HookTest(PluginTestCase):
         self.assertTrue(out["additionalContext"].startswith("[MindSlice standing memory · page 1/1"))
         self.assertIn("standing memory complete", out["additionalContext"])
 
-    def test_slots_without_a_page_print_nothing(self) -> None:
-        self.configure(self.tmp / "ws")
-        self.assertIn("standing memory complete · 1 pages", self.hook(1, session="one").stdout)
-        for slot in range(2, helpers.MAX_PAGES + 1):
-            r = self.hook(slot, session="one")
-            self.assertEqual((r.returncode, r.raw), (0, ""))
-
-    def test_concurrent_slots_share_a_snapshot(self) -> None:
+    def test_every_page_in_one_context(self) -> None:
         ws = self.tmp / "ws"
         self.configure(ws)
         core.ensure_workspace(core.resolve("hook"))
         for i in range(6):
             write_always(ws, f"rules/r{i}", "- " + ("规则内容 " * 900))
-        slots = range(1, helpers.MAX_PAGES + 1)
-        with ThreadPoolExecutor(len(slots)) as pool:
-            results = list(pool.map(lambda s: self.hook(s, session="race"), slots))
-        ids = set()
-        for slot, r in zip(slots, results):
-            self.assertEqual(r.returncode, 0, r.stderr)
-            m = HEADER_RE.match(r.stdout)
-            self.assertIsNotNone(m, f"slot {slot}: {r.stdout[:200]!r}")
-            self.assertEqual(int(m.group(1)), slot)
-            ids.add(m.group(3))
-        self.assertEqual(len(ids), 1)
-        self.assertIn("standing memory complete", results[-1].stdout)
+        r = self.hook(session="many")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(r.raw.splitlines()), 1)  # one JSON object
+        headers = [HEADER_RE.match(page) for page in r.pages]
+        self.assertGreater(len(headers), 1)
+        self.assertEqual([(int(m.group(1)), int(m.group(2))) for m in headers],
+                         [(i, len(headers)) for i in range(1, len(headers) + 1)])  # in order, none missing
+        self.assertEqual(len({m.group(3) for m in headers}), 1)  # one snapshot
+        self.assertIn("standing memory complete", r.pages[-1])
+        self.assertEqual(r.context, core.SEP.join(r.pages))
+        self.assertLessEqual(core.utf16_len(r.context), hook_handler()["additionalContextLimit"])
+
+    def test_overflow_keeps_the_first_pages(self) -> None:
+        ws = self.tmp / "ws"
+        self.configure(ws)
+        core.ensure_workspace(core.resolve("hook"))
+        cfg = helpers.target_config()
+        for i in range(-(-cfg["hook_slots"] * cfg["page_limit"] // 8000) + 2):
+            write_always(ws, f"big/b{i}", "- " + ("长规则 " * 2200))
+        r = self.hook(session="ovf")
+        self.assertEqual(len(r.pages), cfg["hook_slots"])
+        self.assertIn("MindSlice's usage instructions", r.pages[0])  # the preamble is still there
+        self.assertIn("# Standing memory overflow", r.pages[-1])
+        self.assertLessEqual(core.utf16_len(r.context), hook_handler()["additionalContextLimit"])
 
     def test_unconfigured(self) -> None:
         r = self.hook(1)
@@ -189,7 +193,7 @@ class HookTest(PluginTestCase):
         r = self.hook(1, env=env)
         self.assertEqual(r.returncode, 0)
         self.assertIn("[MindSlice plugin could not start]", r.stdout)
-        self.assertEqual(self.hook(2, env=env).raw, "")  # said once
+        self.assertEqual(len(r.raw.splitlines()), 1)  # as JSON, like a page
 
     def test_stderr_only_crash_becomes_context(self) -> None:
         os.environ.pop("PLUGIN_DATA", None)
@@ -205,7 +209,7 @@ class InstalledLayoutTest(PluginTestCase):
 
     def install(self) -> tuple[Path, Path]:
         home = self.tmp / "codex-home"
-        root = home / "plugins" / "cache" / "mkt" / "mindslice" / "0.1.6-1"
+        root = home / "plugins" / "cache" / "mkt" / "mindslice" / "1.2.3"
         shutil.copytree(PLUGIN, root, symlinks=True)
         os.environ.pop("PLUGIN_DATA")  # only hooks get it
         os.environ.pop("PLUGIN_ROOT")
@@ -239,7 +243,7 @@ class InstalledLayoutTest(PluginTestCase):
         self.assertTrue((ws / "mounts.toml").is_file())
         self.assertEqual(json.loads((data / "active_workspace.json").read_text())["workspace"], str(ws))
         # the hooks, which do get PLUGIN_DATA, use the same directory
-        hook = self.run_entry("1", stdin="{}", cmd=[sys.executable, str(root / "adapter" / "hook.py")],
+        hook = self.run_entry(stdin="{}", cmd=[sys.executable, str(root / "adapter" / "hook.py")],
                               env={"PLUGIN_DATA": str(data), "PLUGIN_ROOT": str(root)})
         page = json.loads(hook.stdout)["hookSpecificOutput"]["additionalContext"]
         self.assertIn(f"Memory workspace: `{ws}`", page)
@@ -319,18 +323,18 @@ class ConfigTest(PluginTestCase):
 
 
 @only("codex")
-class ToolsTest(PluginTestCase):
-    def test_read_only_tools_are_annotated(self) -> None:
-        ws = self.tmp / "ws"
-        Workspace.init(ws).close()
-        with Workspace(ws) as w:
-            s = core.PluginMCPServer(w)
-            tools = s.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
-        hints = {t["name"]: t.get("annotations", {}).get("readOnlyHint") for t in tools}
-        self.assertEqual(hints, {"manifest": True, "search": True, "read": True, "write": None})
-
+class SettingsTest(PluginTestCase):
     def test_compaction_text(self) -> None:
         self.assertNotIn("call manifest() again before continuing", core.plugin_instructions())
+
+    def test_stage_writes_comes_from_the_settings_file_only(self) -> None:
+        # the MCP server's environment is filtered: a variable would never reach it
+        import driver
+
+        os.environ["MINDSLICE_PLUGIN_STAGE_WRITES"] = "true"
+        self.assertFalse(driver.stage_writes_enabled())
+        driver.save_settings({"stage_writes": True})
+        self.assertTrue(driver.stage_writes_enabled())
 
 
 @only("codex")
@@ -347,9 +351,7 @@ class LauncherTest(PluginTestCase):
 
     @unittest.skipIf(WINDOWS, "POSIX links")
     def test_linked_launcher(self) -> None:
-        import driver
-
-        d = driver.write_launchers()
+        d = core.write_launchers()
         links = self.tmp / "links"
         links.mkdir()
         (links / "mindslice").symlink_to(d / "mindslice")

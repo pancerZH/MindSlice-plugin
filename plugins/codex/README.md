@@ -14,10 +14,10 @@ codex plugin add mindslice@mindslice
 
 (or `/plugins` in Codex, marketplace **MindSlice**). Then, in Codex:
 
-1. **Trust the startup hooks.** Codex skips plugin hooks until you review them: run `/hooks` and trust the
-   four MindSlice `SessionStart` hooks (they run `adapter/hook.py` from the plugin folder). Codex asks again
-   after each plugin update. Without them the MCP tools still work, but your standing memory is not delivered
-   at session start.
+1. **Trust the startup hook.** Codex skips a plugin's hooks until you review them: run `/hooks` and trust the
+   MindSlice `SessionStart` hook (it runs `adapter/hook.py` from the plugin folder). Codex asks again after
+   each plugin update. Without it the MCP tools still work, but your standing memory is not delivered at
+   session start.
 2. **Choose the memory workspace.** Codex has no plugin options, so the plugin keeps its settings in its data
    folder. Ask Codex for `$mindslice:setup`, or set it yourself:
 
@@ -25,7 +25,7 @@ codex plugin add mindslice@mindslice
    ~/.codex/plugins/data/mindslice-mindslice/bin/mindslice plugin-config --workspace ~/mindslice
    ```
 
-   (that launcher exists once the hooks have run; before, use `bin/mindslice` in the plugin folder,
+   (that launcher exists once the hook has run; before, use `bin/mindslice` in the plugin folder,
    `~/.codex/plugins/cache/mindslice/mindslice/<version>/`). An existing MindSlice workspace (a folder with
    `mounts.toml`) is used as is; a new path or an empty folder is initialized at the next session start; a
    folder that already holds other files is refused, and nothing is written to it. Add `--stage-writes true` to
@@ -33,7 +33,7 @@ codex plugin add mindslice@mindslice
 3. Start a new session, then run `$mindslice:setup` to seed the memory and verify that it reaches the model.
 
 To update: `codex plugin marketplace upgrade mindslice`, then `codex plugin add mindslice@mindslice` again
-(your settings stay in the data folder), and trust the updated hooks in `/hooks`.
+(your settings stay in the data folder), and trust the updated hook in `/hooks`.
 
 Requirements: Python 3.12 or newer somewhere on the machine (`python3.12`/`python3.13` on `PATH`, Homebrew,
 `~/.local/bin` or pyenv are found automatically), and a `python3` to start it. Tested with Codex CLI 0.169.0 on
@@ -50,7 +50,7 @@ mindslice==0.1.6`, or download the wheel and set `MINDSLICE_PLUGIN_WHEEL` to the
 | Part | What it does |
 | --- | --- |
 | MCP server `mindslice` | tools `manifest`, `search`, `read`, `write` on your workspace; the first three are read-only and run without an approval prompt |
-| `SessionStart` hooks | deliver MindSlice's usage instructions and your always-loaded cards at every session start, resume, clear, fork and compaction, as numbered pages, so nothing is truncated |
+| `SessionStart` hook | delivers MindSlice's usage instructions and your always-loaded cards at every session start, resume, clear, fork and compaction, as numbered pages, so nothing is truncated |
 | `mindslice` command | the full MindSlice CLI, pointed at your workspace; the startup pages give the agent its path |
 | `$mindslice:setup` | choose and seed the workspace, migrate from a manual setup, verify |
 | `$mindslice:review` | show staged memory changes and apply or discard the ones you approve |
@@ -93,7 +93,7 @@ writable root, for example `codex --add-dir ~/mindslice`, or in `~/.codex/config
 writable_roots = ["/home/you/mindslice"]
 ```
 
-`plugin-config` writes the plugin's data folder and always needs the escalation. The hooks and the MCP server
+`plugin-config` writes the plugin's data folder and always needs the escalation. The hook and the MCP server
 are not sandboxed and always work.
 
 For nested sessions that must not see your personal memory (for example MindSlice-forge's `codex exec` runs),

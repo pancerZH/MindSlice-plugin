@@ -1,8 +1,8 @@
 ## Step 3 - Point the plugin at the workspace
 
 Codex has no plugin options, so the plugin keeps its settings in `settings.json` in its data folder
-(`~/.codex/plugins/data/mindslice-mindslice/`); its MCP server and hooks read them at every session start.
-Show the user the command, then run it once they agree (escalated: it writes outside the project):
+(`~/.codex/plugins/data/mindslice-mindslice/`); its MCP server and hook read them at every session start.
+Show the user the command, then run it once they agree:
 
 ```bash
 <mindslice_bin> plugin-config --workspace "<workspace>"
@@ -21,15 +21,15 @@ What the plugin does with the folder at the next session start:
 | does not exist yet, or is empty | initialized as a new workspace |
 | holds other files but no `mounts.toml` | refused: nothing is written, the session reports it |
 
-Settings take effect in a **new session**: the current one keeps the MCP server and hooks it started with.
+Settings take effect in a **new session**: the current one keeps the MCP server and pages it started with.
 Ask the user to start one (or use `codex exec` for the checks in Step 4) before validating.
 
 By default Codex asks before each `write` call of the MindSlice tools (`manifest`, `search` and `read` are
 read-only and run without asking). If the user wants memory writes to go through without a prompt, they can
 choose to always allow it when Codex asks.
 
-Every `mindslice` command that uses the workspace takes a lock file in it, so from the shell tool it needs the
-escalation each time. If the user wants to avoid those prompts, suggest making the workspace a writable root of
+Every `mindslice` command that uses the workspace takes a lock file in it, so Codex asks the user to approve
+each one. If the user wants to avoid those prompts, suggest making the workspace a writable root of
 Codex's sandbox: `codex --add-dir "<workspace>"`, or `writable_roots = ["<workspace>"]` under
 `[sandbox_workspace_write]` in `~/.codex/config.toml` (only with their agreement; `plugin-config` still needs
 the escalation).

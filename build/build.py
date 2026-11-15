@@ -34,6 +34,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 SRC = REPO / "src"
+COMMON = SRC / "common"  # shared by the hosts: skill rules, the logo, the launchers and hook wrapper of the JSON hosts
 LOCK = REPO / "build" / "upstream.lock"
 TARGETS = ("claude", "antigravity", "codex")
 CACHE = REPO / "build" / ".cache"
@@ -41,7 +42,7 @@ MAX_TARGET_BYTES = 256_000  # everything but images (the directory limits images
 IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")  # binary images only: an SVG is text and counts
 ICON_MAX_BYTES = 2_000_000
 
-sys.path.insert(0, str(SRC / "common"))
+sys.path.insert(0, str(COMMON))
 import rules  # noqa: E402
 
 # Top-level paths a plugin directory may contain, per host (anything else is a build bug).
@@ -351,25 +352,39 @@ def claude_files(out: Build, tdir: Path, cfg: dict, manifest: dict) -> None:
     cmd_tpl = b"".join(line for line in cmd_tpl.splitlines(True) if not line.startswith(b"::"))
     out.add("adapter/mcp.cmd", cmd_tpl.replace(b"@ARGS@", b"mcp"))
     out.add("README.md", (tdir / "README.md").read_bytes())
-    icon = tdir / "icon.png"
-    if icon.is_file():  # found by the directory and `claude plugin validate` at .claude-plugin/icon.png
-        data = icon.read_bytes()
-        check_icon(data, icon)
-        out.add(".claude-plugin/icon.png", data)
+    _add_logo(out, ".claude-plugin/icon.png")  # where the directory and `claude plugin validate` look for it
 
 
-def _sh_launcher(tdir: Path, entry: str, args: str) -> bytes:
-    tpl = "".join(line for line in (tdir / "launcher" / "run.sh").read_text(encoding="utf-8").splitlines(True)
+def _add_logo(out: Build, path: str) -> None:
+    logo = COMMON / "logo.png"
+    data = logo.read_bytes()
+    check_icon(data, logo)
+    out.add(path, data)
+
+
+def _sh_launcher(entry: str, args: str) -> bytes:
+    tpl = "".join(line for line in (COMMON / "launcher" / "run.sh").read_text(encoding="utf-8").splitlines(True)
                   if not line.startswith("##"))
     return tpl.replace("@ENTRY@", entry).replace("@ARGS@", args).encode()
 
 
-def _cmd_launcher(tdir: Path, entry: str, args: str) -> bytes:
-    tpl = (tdir / "launcher" / "run.cmd").read_bytes()
+def _cmd_launcher(entry: str, args: str) -> bytes:
+    src = COMMON / "launcher" / "run.cmd"
+    tpl = src.read_bytes()
     if b"\n" in tpl.replace(b"\r\n", b""):
-        raise BuildError(f"{tdir / 'launcher' / 'run.cmd'} must use CRLF line endings (cmd.exe labels break otherwise)")
+        raise BuildError(f"{src} must use CRLF line endings (cmd.exe labels break otherwise)")
     tpl = b"".join(line for line in tpl.splitlines(True) if not line.startswith(b"::"))
     return tpl.replace(b"@ENTRY@", entry.encode()).replace(b"@ARGS@", args.encode())
+
+
+def _add_runners(out: Build) -> None:
+    """What Antigravity and Codex run: adapter/hook.py (the hook, its output always JSON), the MCP launchers and
+    bin/mindslice, the CLI."""
+    out.add("adapter/hook.py", (COMMON / "hook.py").read_bytes())
+    out.add("adapter/mcp", _sh_launcher("entry.py", "mcp"), executable=True)
+    out.add("adapter/mcp.cmd", _cmd_launcher("entry.py", "mcp"))
+    out.add("bin/mindslice", _sh_launcher("../adapter/entry.py", '"$@"'), executable=True)
+    out.add("bin/mindslice.cmd", _cmd_launcher("..\\adapter\\entry.py", "%*"))
 
 
 def antigravity_files(out: Build, tdir: Path, cfg: dict, manifest: dict) -> None:
@@ -380,52 +395,26 @@ def antigravity_files(out: Build, tdir: Path, cfg: dict, manifest: dict) -> None
     out.add("mcp_config.json", _json(mcp))
     out.add("hooks.json", _json({"mindslice": {cfg["hook_event"]: [
         {"type": "command", "command": cfg["hook_command"], "timeout": cfg["hook_timeout"]}]}}))
-    out.add("adapter/hook.py", (tdir / "hook.py").read_bytes())
-    out.add("adapter/mcp", _sh_launcher(tdir, "entry.py", "mcp"), executable=True)
-    out.add("adapter/mcp.cmd", _cmd_launcher(tdir, "entry.py", "mcp"))
-    out.add("bin/mindslice", _sh_launcher(tdir, "../adapter/entry.py", '"$@"'), executable=True)
-    out.add("bin/mindslice.cmd", _cmd_launcher(tdir, "..\\adapter\\entry.py", "%*"))
+    _add_runners(out)
     out.add("rules/AGENTS.md", (tdir / "rules" / "AGENTS.md").read_bytes())
     out.add("README.md", (tdir / "README.md").read_bytes())
-    logo = manifest.get("logo")
-    if logo:
-        logo_src = tdir / Path(logo).name
-        data = logo_src.read_bytes()
-        if logo_src.suffix.lower() == ".png":
-            check_icon(data, logo_src)
-        out.add(logo, data)
+    _add_logo(out, manifest["logo"])
 
 
 def codex_files(out: Build, tdir: Path, cfg: dict, manifest: dict) -> None:
-    """Codex: .codex-plugin/plugin.json (naming .mcp.json and skills/), hooks/hooks.json with one command per slot
-    (Codex substitutes ${PLUGIN_ROOT} itself and runs the matching hooks concurrently), adapter/hook.py that wraps
-    each slot's output in the JSON Codex expects, the MCP launchers, bin/mindslice and the listing logo."""
+    """Codex: .codex-plugin/plugin.json (naming .mcp.json and skills/), hooks/hooks.json with one command (Codex
+    substitutes ${PLUGIN_ROOT} itself; the context limit is raised so every page fits in the one hook's output),
+    adapter/hook.py, the MCP launchers, bin/mindslice and the listing logo."""
     out.add(cfg["manifest_path"], _json(manifest))
     out.add(".mcp.json", _json(json.loads((tdir / "mcp.json").read_text(encoding="utf-8"))))
-    hooks = []
-    for i in range(1, cfg["hook_slots"] + 1):
-        hook = {"type": "command", "command": cfg["hook_command"].replace("{slot}", str(i)),
-                "timeout": cfg["hook_timeout"], "additionalContextLimit": cfg["hook_context_limit"]}
-        if i == 1:
-            hook["statusMessage"] = "Loading MindSlice memory"
-        hooks.append(hook)
+    hook = {"type": "command", "command": cfg["hook_command"], "timeout": cfg["hook_timeout"],
+            "additionalContextLimit": cfg["hook_context_limit"], "statusMessage": "Loading MindSlice memory"}
     out.add("hooks/hooks.json", _json({
-        "description": "MindSlice: deliver the standing memory at session start, resume, clear, fork and compaction "
-                       "(one page per command, all from one snapshot).",
-        "hooks": {cfg["hook_event"]: [{"hooks": hooks}]}}))
-    out.add("adapter/hook.py", (tdir / "hook.py").read_bytes())
-    out.add("adapter/mcp", _sh_launcher(tdir, "entry.py", "mcp"), executable=True)
-    out.add("adapter/mcp.cmd", _cmd_launcher(tdir, "entry.py", "mcp"))
-    out.add("bin/mindslice", _sh_launcher(tdir, "../adapter/entry.py", '"$@"'), executable=True)
-    out.add("bin/mindslice.cmd", _cmd_launcher(tdir, "..\\adapter\\entry.py", "%*"))
+        "description": "MindSlice: deliver the standing memory at session start, resume, clear, fork and compaction.",
+        "hooks": {cfg["hook_event"]: [{"hooks": [hook]}]}}))
+    _add_runners(out)
     out.add("README.md", (tdir / "README.md").read_bytes())
-    logo = manifest.get("interface", {}).get("logo")
-    if logo:
-        rel = logo.removeprefix("./")
-        logo_src = tdir / Path(rel).name
-        data = logo_src.read_bytes()
-        check_icon(data, logo_src)
-        out.add(rel, data)
+    _add_logo(out, manifest["interface"]["logo"].removeprefix("./"))
 
 
 HOSTS = {"claude": claude_files, "antigravity": antigravity_files, "codex": codex_files}

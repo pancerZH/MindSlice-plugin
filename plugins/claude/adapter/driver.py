@@ -22,7 +22,6 @@ environment (``MINDSLICE_PLUGIN_OPTION_WORKSPACE``), not on the command line.
 
 from __future__ import annotations
 
-import json
 import os
 import shlex
 import shutil
@@ -34,9 +33,18 @@ NAME = "claude"
 reinjects_on_compact = True  # SessionStart fires again with source "compact"
 options_reach_hooks = True  # user-set options arrive as $CLAUDE_PLUGIN_OPTION_<KEY> (only defaults do not)
 REVIEW_COMMAND = "/mindslice:review"
-CLI_HINT = ("The `mindslice` CLI is on the Bash tool's PATH and uses this workspace by default (pass -w for "
+
+
+def cli_hint() -> str:
+    return ("The `mindslice` CLI is on the Bash tool's PATH and uses this workspace by default (pass -w for "
             "another one); management commands (status, diff, apply, discard, mount, bake, doctor) are CLI-only. "
             "Run `mindslice apply` or `discard` only when the user approves it explicitly (see /mindslice:review).")
+
+
+def setup_hint() -> str:
+    """How the user names the workspace (completes "To choose one, ..." and "Point the plugin at ... (...)")."""
+    return ("set \"Memory workspace\" in the plugin's options (run /plugin, open mindslice, configure), or run "
+            "/mindslice:setup for guided setup")
 
 
 def _clean(value: str | None) -> str | None:
@@ -75,53 +83,12 @@ def stage_writes_enabled() -> bool:
     return any((_clean(v) or "").lower() in ("1", "true", "yes", "on") for v in values)
 
 
-def _hook_input() -> dict:
-    if sys.stdin is None or sys.stdin.isatty():
-        return {}
-    try:
-        value = json.loads(sys.stdin.read() or "{}")
-    except (ValueError, OSError):
-        return {}
-    return value if isinstance(value, dict) else {}
-
-
 def launcher_dir() -> Path:
+    """Where ``core.write_launchers`` puts the command: the Bash tool and the user's terminal have no
+    ``CLAUDE_PLUGIN_ROOT``, and the plugin may have no top-level ``bin/``."""
     import core
 
     return core.plugin_data_dir() / "bin"
-
-
-def _write_if_changed(path: Path, text: str, newline: str = "\n") -> None:
-    import core
-
-    data = text.replace("\n", newline)
-    try:
-        if path.read_text(encoding="utf-8") == data:
-            return
-    except OSError:
-        pass
-    core.atomic_write(path, data)
-
-
-def write_launchers() -> Path:
-    """``<plugin data>/bin/mindslice`` (and ``mindslice.cmd`` on Windows): stable paths that run the plugin
-    version installed now with the interpreter this hook runs on (already checked to be 3.12+), refreshed at every
-    session start, so links to them survive plugin updates. They run entry.py directly: the Bash tool and the
-    user's terminal have no ``CLAUDE_PLUGIN_ROOT``."""
-    import core
-
-    d = launcher_dir()
-    entry = core.PLUGIN_ROOT / "adapter" / "entry.py"
-    python = Path(sys.executable)
-    sh = d / "mindslice"
-    _write_if_changed(sh, "#!/bin/sh\n# Written by the MindSlice plugin at session start: runs the installed plugin's CLI.\n"
-                          f"exec {shlex.quote(python.as_posix())} {shlex.quote(entry.as_posix())} \"$@\"\n")
-    sh.chmod(0o755)
-    if os.name == "nt":
-        _write_if_changed(d / "mindslice.cmd", "@echo off\nrem Written by the MindSlice plugin at session start.\n"
-                                               f"\"{python}\" \"{entry}\" %*\nexit /b %ERRORLEVEL%\n",
-                          newline="\r\n")
-    return d
 
 
 def path_entry(directory: Path) -> str:
@@ -158,8 +125,10 @@ def env_lines(workspace: Path | None, launchers: Path | None = None) -> str:
 
 
 def _export_env(workspace: Path | None) -> None:
+    import core
+
     try:
-        launchers: Path | None = write_launchers()
+        launchers: Path | None = core.write_launchers()
     except OSError:
         launchers = None
     env_file = _clean(os.environ.get("CLAUDE_ENV_FILE"))
@@ -192,7 +161,7 @@ def run_hook(args: list[str]) -> int:
     if not 1 <= slot <= slots:
         sys.stderr.write(f"mindslice plugin: hook slot must be 1..{slots}\n")
         return 1
-    info = _hook_input()
+    info = core.hook_input()
     session = str(info.get("session_id") or f"ppid-{os.getppid()}")
     result = core.hook_pages(session, int(cfg["page_limit"]), slots)
     if slot == 1:

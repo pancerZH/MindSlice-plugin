@@ -44,6 +44,9 @@ class MCPTest(PluginTestCase):
             self.assertNotIn("ZEBRA-4412", init["instructions"])
             tools = rpc(s, "tools/list", msg_id=2)["result"]["tools"]
             self.assertEqual([t["name"] for t in tools], [t["name"] for t in TOOLS])
+            # only write changes the memory (Codex runs tools that declare themselves read-only without asking)
+            hints = {t["name"]: t.get("annotations", {}).get("readOnlyHint") for t in tools}
+            self.assertEqual(hints, {"manifest": True, "search": True, "read": True, "write": None})
             manifest = next(t for t in tools if t["name"] == "manifest")
             self.assertNotIn("again after the conversation is compacted", manifest["description"])
             self.assertIn("include_always=false", manifest["description"])

@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -118,6 +119,46 @@ def bin_path() -> Path:
     return driver.launcher_dir() / ("mindslice.cmd" if os.name == "nt" else "mindslice")
 
 
+def _write_if_changed(path: Path, text: str, newline: str = "\n") -> None:
+    data = text.replace("\n", newline)
+    try:
+        if path.read_text(encoding="utf-8") == data:
+            return
+    except OSError:
+        pass
+    atomic_write(path, data)
+
+
+def write_launchers() -> Path:
+    """``mindslice`` (and ``mindslice.cmd`` on Windows) in the driver's ``launcher_dir()``, for hosts that keep the
+    command in the plugin's data directory: stable paths that run the plugin version installed now with the
+    interpreter this hook runs on (already checked to be 3.12+), refreshed at every session start, so links to them
+    survive plugin updates. They run entry.py directly and need no host environment."""
+    d = driver.launcher_dir()
+    entry = PLUGIN_ROOT / "adapter" / "entry.py"
+    python = Path(sys.executable)
+    sh = d / "mindslice"
+    _write_if_changed(sh, "#!/bin/sh\n# Written by the MindSlice plugin at session start: runs the installed plugin's CLI.\n"
+                          f"exec {shlex.quote(python.as_posix())} {shlex.quote(entry.as_posix())} \"$@\"\n")
+    sh.chmod(0o755)
+    if os.name == "nt":
+        _write_if_changed(d / "mindslice.cmd", "@echo off\nrem Written by the MindSlice plugin at session start.\n"
+                                               f"\"{python}\" \"{entry}\" %*\nexit /b %ERRORLEVEL%\n",
+                          newline="\r\n")
+    return d
+
+
+def hook_input() -> dict[str, Any]:
+    """What the host wrote to a hook's stdin (a JSON object), or {}."""
+    if sys.stdin is None or sys.stdin.isatty():
+        return {}
+    try:
+        value = json.loads(sys.stdin.read() or "{}")
+    except (ValueError, OSError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 # ---------------------------------------------------------------------------
 # engine text, rewritten where it contradicts the plugin's delivery (section 5.2)
 # ---------------------------------------------------------------------------
@@ -184,15 +225,17 @@ def plugin_instructions(reinjects: bool | None = None) -> str:
                           driver.reinjects_on_compact if reinjects is None else reinjects)
 
 
+READ_ONLY_TOOLS = ("manifest", "search", "read")  # write is the only tool that changes the memory
+
+
 def plugin_tools(reinjects: bool | None = None) -> list[dict[str, Any]]:
     tools = copy.deepcopy(TOOLS)
     manifest = next(t for t in tools if t["name"] == "manifest")
     manifest["description"] = apply_rewrites(manifest["description"], MANIFEST_REWRITES,
                                              driver.reinjects_on_compact if reinjects is None else reinjects)
-    for tool in tools:  # hints a host acts on (Codex runs read-only tools without an approval prompt)
-        hints = getattr(driver, "TOOL_ANNOTATIONS", {}).get(tool["name"])
-        if hints:
-            tool["annotations"] = dict(tool.get("annotations") or {}, **hints)
+    for tool in tools:  # a host may act on these (Codex runs read-only tools without an approval prompt)
+        if tool["name"] in READ_ONLY_TOOLS:
+            tool["annotations"] = dict(tool.get("annotations") or {}, readOnlyHint=True, openWorldHint=False)
     return tools
 
 
@@ -307,23 +350,43 @@ def resolve(entry: str, cli_value: str | None = None) -> Target:
 
 
 def unset_message() -> str:
-    custom = getattr(driver, "unset_message", None)
-    if custom is not None:
-        return custom()
     return ("The MindSlice plugin has no memory workspace configured yet, so no memory is loaded in this session "
-            "and the MindSlice tools are unavailable. Set \"Memory workspace\" in the plugin's options (run /plugin, "
-            "open mindslice, configure) to an existing MindSlice workspace or to a new or empty folder, then start "
-            "a new session; or run /mindslice:setup for guided setup.")
+            f"and the MindSlice tools are unavailable. To choose one, {driver.setup_hint()}; an existing MindSlice "
+            "workspace is used as is, a new or empty folder is initialized. Then start a new session.")
 
 
 def occupied_message(path: Path) -> str:
-    custom = getattr(driver, "occupied_message", None)
-    if custom is not None:
-        return custom(path)
     return (f"The configured MindSlice memory workspace {path} is not empty and is not a MindSlice workspace "
-            f"(no {MOUNTS_FILE}). The plugin left it untouched and loaded no memory. Point the plugin's \"Memory "
-            "workspace\" option at an empty folder, a new path or an existing MindSlice workspace (/plugin, or "
-            "/mindslice:setup), then start a new session. Do not initialize a workspace inside that folder.")
+            f"(no {MOUNTS_FILE}). The plugin left it untouched and loaded no memory. Point the plugin at an empty "
+            f"folder, a new path or an existing MindSlice workspace ({driver.setup_hint()}), then start a new "
+            "session. Do not initialize a workspace inside that folder.")
+
+
+def check_workspace_setting(value: str) -> tuple[Path | None, str | None]:
+    """A workspace setting as an absolute path, or ``(None, why)`` when the plugin must not use it: a relative
+    path, or a folder inside the plugin's installation or data folder. ``why`` completes "The workspace <value> "."""
+    expanded = expand_home(value)
+    if not Path(expanded).is_absolute():
+        return None, ("uses an unexpanded shell variable (use ~/... or a full path instead)"
+                      if value.startswith(("$", "%")) else "is a relative path, not an absolute path")
+    path = Path(os.path.abspath(expanded))
+    try:
+        resolved = path.resolve()
+    except OSError:
+        resolved = path
+    installed = Path(os.path.abspath(__file__)).parent.parent  # as the host names it; PLUGIN_ROOT has links followed
+    roots = [(root, "is inside the plugin installation folder (which plugin updates replace)")
+             for root in (installed, PLUGIN_ROOT)]
+    try:
+        data = Path(driver.plugin_data_dir())
+        roots += [(root, "is inside the plugin's internal data folder") for root in (data, data.resolve())]
+    except OSError:
+        pass
+    for root, why in roots:
+        for candidate in (path, resolved):
+            if candidate == root or root in candidate.parents:
+                return None, why
+    return path, None
 
 
 def ensure_workspace(target: Target) -> Path:
@@ -372,7 +435,7 @@ def preamble(path: Path) -> str:
             "always-loaded cards in full. Read every page: they are numbered page i/n with one snapshot id, and the "
             "last one ends with a \"complete\" line. You do not need manifest() for this content; call "
             "manifest(include_always=false) to browse the mounted slices.\n"
-            + (driver.cli_hint() if hasattr(driver, "cli_hint") else driver.CLI_HINT)
+            + driver.cli_hint()
             + "".join("\n" + note for note in getattr(driver, "startup_notes", lambda: [])()))
 
 
@@ -921,6 +984,9 @@ def status_report(cli_workspace: str | None = None) -> tuple[dict[str, Any], int
         problems.append(f"standing memory needs {d.needed_pages} pages but only {slots} are delivered: some "
                         "always-loaded cards do not reach the model at session start; move reference knowledge to "
                         "load=\"as-needed\"")
+    elif d.needed_pages >= slots > 1:  # a card is never split across pages, so pages fill before the units do
+        warnings.append(f"standing memory fills all {slots} startup pages ({pct}% of the capacity): the next "
+                        "always-loaded card may not fit")
     elif pct >= 75:
         warnings.append(f"standing memory uses {pct}% of the startup capacity")
     hs = mcp_handshake(path)

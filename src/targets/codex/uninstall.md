@@ -1,6 +1,6 @@
 # Uninstall or disconnect the MindSlice plugin (Codex)
 
-Removing the plugin removes its MCP server, hooks, skills and `mindslice` command. **The memory workspace
+Removing the plugin removes its MCP server, hook, skills and `mindslice` command. **The memory workspace
 on disk is kept unless the user explicitly asks to delete it.**
 
 ## Step 1 - Inspect
