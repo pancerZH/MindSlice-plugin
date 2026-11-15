@@ -126,8 +126,10 @@ class HookTest(PluginTestCase):
         project = self.tmp / "project"
         project.mkdir()
         command = hook_handler()["command"].replace("${PLUGIN_ROOT}", str(PLUGIN))
-        shell = ["cmd", "/c", command] if WINDOWS else ["sh", "-c", command]
-        r = subprocess.run(shell, cwd=project, input=json.dumps({"session_id": "c1", "source": "startup"}),
+        # As one string for the shell (sh -c, cmd /c): passed as a list item, Python would escape the command's own
+        # quotes as \" on Windows, which cmd.exe hands on to python as part of the path.
+        r = subprocess.run(command, shell=True, cwd=project,
+                           input=json.dumps({"session_id": "c1", "source": "startup"}),
                            capture_output=True, text=True, encoding="utf-8", timeout=120)
         self.assertEqual(r.returncode, 0, r.stderr)
         out = json.loads(r.stdout)["hookSpecificOutput"]
