@@ -15,7 +15,7 @@
     "NOTICE": "c59a0c528eef8df48a71b5359c4c356ed5f1ef5283a01a7cc837e59464fd1fbf",
     "README.md": "111b84b5e99ed445d4f4c1709693e98a5d0370a0e0268fa2afe2f945f3f9bc26",
     "adapter/core.py": "106aa7109c1b227639361d21e81980a5fd2cd3ac54d75a86fda6a020be2c6b61",
-    "adapter/driver.py": "28417ab9720bee9f3226b5db6216f1ccfa9841c296cdf0fd885951a0f52f17de",
+    "adapter/driver.py": "7ed1d859a959d7b3b54ba2565a83c278df14d00f3ed8ad3160c2894e322cadec",
     "adapter/entry.py": "5cb621c27c6c34cb948e1c96623aa8d01d8992adb4bdc03f81752ede0ee376af",
     "adapter/hook.py": "c8e606bd5addfe8b442c6f1bf4e6ca20b586984fbe9003611d1ded50e635d1ee",
     "adapter/mcp": "27e0aff3568c8cf03337b68e35929ea0e93e732fb4e462d176cef06f161b50e6",

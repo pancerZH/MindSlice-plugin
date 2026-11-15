@@ -15,6 +15,10 @@ Measured on Antigravity CLI 1.5.9 (PLAN section 12):
 - The agent's ``run_command`` has the plugin's ``bin/`` on its PATH, but neither ``PLUGIN_ROOT`` nor
   ``PLUGIN_DATA``; it has ``ANTIGRAVITY_APP_DATA_DIR``, whose ``plugin_data/<plugin folder>`` is the same data
   directory, so the CLI shares the engine copy and the bridge file with the hook and the MCP server.
+- Windows: ``mcp_config.json``'s ``./adapter/mcp`` works because Antigravity resolves it itself, against the plugin
+  directory, through PATHEXT, to an absolute backslash path, and starts ``cmd.exe /c ""<root>\\adapter\\mcp.cmd""``
+  (process tree measured on CLI 1.5.9; the app is not measured). Handed as is to ``cmd /c`` or ``CreateProcess`` the
+  relative ``./`` path would fail (``'.' is not recognized``, or WinError 193 on the extension-less sh script).
 - Windows, measured with ``enableTerminalSandbox`` on: inside ``run_command`` the ``py`` launcher exists but finds
   no Python (the launchers therefore try each interpreter before using it), and reading the workspace, which lies
   outside the project, is denied (``--add-dir`` does not lift it). The agent then reruns the command with
