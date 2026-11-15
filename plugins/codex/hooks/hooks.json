@@ -1,0 +1,36 @@
+{
+  "description": "MindSlice: deliver the standing memory at session start, resume, clear, fork and compaction (one page per command, all from one snapshot).",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/adapter/hook.py\" 1 || py \"${PLUGIN_ROOT}/adapter/hook.py\" 1 || python \"${PLUGIN_ROOT}/adapter/hook.py\" 1",
+            "timeout": 60,
+            "additionalContextLimit": 32000,
+            "statusMessage": "Loading MindSlice memory"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/adapter/hook.py\" 2 || py \"${PLUGIN_ROOT}/adapter/hook.py\" 2 || python \"${PLUGIN_ROOT}/adapter/hook.py\" 2",
+            "timeout": 60,
+            "additionalContextLimit": 32000
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/adapter/hook.py\" 3 || py \"${PLUGIN_ROOT}/adapter/hook.py\" 3 || python \"${PLUGIN_ROOT}/adapter/hook.py\" 3",
+            "timeout": 60,
+            "additionalContextLimit": 32000
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/adapter/hook.py\" 4 || py \"${PLUGIN_ROOT}/adapter/hook.py\" 4 || python \"${PLUGIN_ROOT}/adapter/hook.py\" 4",
+            "timeout": 60,
+            "additionalContextLimit": 32000
+          }
+        ]
+      }
+    ]
+  }
+}

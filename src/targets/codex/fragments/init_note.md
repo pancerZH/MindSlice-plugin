@@ -1,0 +1,1 @@
+Initialize the confirmed workspace only if needed: when the plugin's workspace setting (`plugin-config --workspace`) names a new or empty folder, the plugin initializes it by itself at the next session start (Step 3), so `<mindslice_bin> init <workspace>` is only needed to seed it before that, and only on a new or empty folder, never on a folder that already holds other files.

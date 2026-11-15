@@ -1,0 +1,1 @@
+Set up the MindSlice memory plugin in Codex: trust its startup hooks, choose or connect the memory workspace with `mindslice plugin-config`, seed it (an existing workspace, mounted slices or Markdown folders, or a short conversation), clean up an older manual MindSlice setup, and verify with `mindslice plugin-status`, `mindslice doctor` and a fresh `codex exec` session.

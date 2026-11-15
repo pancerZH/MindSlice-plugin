@@ -1,0 +1,19 @@
+{
+  "target": "codex",
+  "driver": "codex",
+  "host": "codex",
+  "output": "plugins/codex",
+  "manifest_path": ".codex-plugin/plugin.json",
+  "page_limit": 9500,
+  "hook_slots": 4,
+  "hook_event": "SessionStart",
+  "hook_command": "python3 \"${PLUGIN_ROOT}/adapter/hook.py\" {slot} || py \"${PLUGIN_ROOT}/adapter/hook.py\" {slot} || python \"${PLUGIN_ROOT}/adapter/hook.py\" {slot}",
+  "hook_timeout": 60,
+  "hook_context_limit": 32000,
+  "skills": {
+    "setup": true,
+    "review": true,
+    "slice-maintainer": true,
+    "slice-builder": false
+  }
+}

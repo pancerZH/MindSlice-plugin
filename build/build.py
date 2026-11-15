@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the host plugins from the locked upstream MindSlice release.
 
-    python3 build/build.py [--target claude|antigravity|all] [--check] [--upstream PATH]
+    python3 build/build.py [--target claude|antigravity|codex|all] [--check] [--upstream PATH]
 
 Reads only ``mindslice/``, ``skills/``, ``LICENSE`` and ``NOTICE`` from upstream (at the commit in
 ``build/upstream.lock``: a ``git archive`` of a local checkout given with ``--upstream``, or the GitHub tarball),
@@ -35,7 +35,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 SRC = REPO / "src"
 LOCK = REPO / "build" / "upstream.lock"
-TARGETS = ("claude", "antigravity")
+TARGETS = ("claude", "antigravity", "codex")
 CACHE = REPO / "build" / ".cache"
 MAX_TARGET_BYTES = 256_000  # everything but images (the directory limits images separately)
 IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")  # binary images only: an SVG is text and counts
@@ -47,12 +47,15 @@ import rules  # noqa: E402
 # Top-level paths a plugin directory may contain, per host (anything else is a build bug).
 # Claude: no top-level bin/, since Chat and Cowork refuse to install a plugin that has one (the launchers live in
 # adapter/). Antigravity: bin/ is what it puts on the agent's PATH; hooks.json, mcp_config.json and rules/ must sit
-# at the plugin root.
+# at the plugin root. Codex: .codex-plugin/plugin.json names .mcp.json and skills/; hooks/hooks.json is found by
+# default; bin/ is not put on any PATH (it is the CLI for whoever knows the plugin folder).
 OUTPUT_ALLOWED = {
     "claude": (".claude-plugin/", ".build-info.json", "README.md", "LICENSE", "NOTICE", "hooks/", "adapter/",
                "skills/"),
     "antigravity": ("plugin.json", "mcp_config.json", "hooks.json", "rules/", "bin/", "assets/", ".build-info.json",
                     "README.md", "LICENSE", "NOTICE", "adapter/", "skills/"),
+    "codex": (".codex-plugin/", ".mcp.json", "hooks/", "bin/", "assets/", ".build-info.json", "README.md", "LICENSE",
+              "NOTICE", "adapter/", "skills/"),
 }
 LINK_RE = re.compile(r"\]\(([^)\s]+)\)")
 PLACEHOLDER_RE = re.compile(r"\{\{(host|upstream):([A-Za-z0-9_.-]+)\}\}")
@@ -393,7 +396,39 @@ def antigravity_files(out: Build, tdir: Path, cfg: dict, manifest: dict) -> None
         out.add(logo, data)
 
 
-HOSTS = {"claude": claude_files, "antigravity": antigravity_files}
+def codex_files(out: Build, tdir: Path, cfg: dict, manifest: dict) -> None:
+    """Codex: .codex-plugin/plugin.json (naming .mcp.json and skills/), hooks/hooks.json with one command per slot
+    (Codex substitutes ${PLUGIN_ROOT} itself and runs the matching hooks concurrently), adapter/hook.py that wraps
+    each slot's output in the JSON Codex expects, the MCP launchers, bin/mindslice and the listing logo."""
+    out.add(cfg["manifest_path"], _json(manifest))
+    out.add(".mcp.json", _json(json.loads((tdir / "mcp.json").read_text(encoding="utf-8"))))
+    hooks = []
+    for i in range(1, cfg["hook_slots"] + 1):
+        hook = {"type": "command", "command": cfg["hook_command"].replace("{slot}", str(i)),
+                "timeout": cfg["hook_timeout"], "additionalContextLimit": cfg["hook_context_limit"]}
+        if i == 1:
+            hook["statusMessage"] = "Loading MindSlice memory"
+        hooks.append(hook)
+    out.add("hooks/hooks.json", _json({
+        "description": "MindSlice: deliver the standing memory at session start, resume, clear, fork and compaction "
+                       "(one page per command, all from one snapshot).",
+        "hooks": {cfg["hook_event"]: [{"hooks": hooks}]}}))
+    out.add("adapter/hook.py", (tdir / "hook.py").read_bytes())
+    out.add("adapter/mcp", _sh_launcher(tdir, "entry.py", "mcp"), executable=True)
+    out.add("adapter/mcp.cmd", _cmd_launcher(tdir, "entry.py", "mcp"))
+    out.add("bin/mindslice", _sh_launcher(tdir, "../adapter/entry.py", '"$@"'), executable=True)
+    out.add("bin/mindslice.cmd", _cmd_launcher(tdir, "..\\adapter\\entry.py", "%*"))
+    out.add("README.md", (tdir / "README.md").read_bytes())
+    logo = manifest.get("interface", {}).get("logo")
+    if logo:
+        rel = logo.removeprefix("./")
+        logo_src = tdir / Path(rel).name
+        data = logo_src.read_bytes()
+        check_icon(data, logo_src)
+        out.add(rel, data)
+
+
+HOSTS = {"claude": claude_files, "antigravity": antigravity_files, "codex": codex_files}
 
 
 def build_target(name: str, up: Upstream, lock: dict[str, str]) -> Build:

@@ -17,6 +17,7 @@ PLUGIN = REPO / "plugins" / TARGET
 ENTRY = PLUGIN / "adapter" / "entry.py"
 WINDOWS = os.name == "nt"
 CLAUDE = TARGET == "claude"
+CODEX = TARGET == "codex"
 # What the host sets for hooks and the MCP server: the plugin's data directory and its root.
 DATA_ENV, ROOT_ENV = ("CLAUDE_PLUGIN_DATA", "CLAUDE_PLUGIN_ROOT") if CLAUDE else ("PLUGIN_DATA", "PLUGIN_ROOT")
 
@@ -97,16 +98,28 @@ class PluginTestCase(unittest.TestCase):
         self._tmp.cleanup()
 
     def shim(self) -> list[str]:
-        """How the agent's shell tool and a user's terminal run the plugin CLI. Claude: the launcher slot 1 writes
-        to <plugin data>/bin. Antigravity: the plugin's own bin/ (mindslice.cmd from cmd/PowerShell on Windows)."""
+        """How the agent's shell tool and a user's terminal run the plugin CLI. Claude and Codex: the launcher slot 1
+        writes to <plugin data>/bin. Antigravity: the plugin's own bin/ (mindslice.cmd from cmd/PowerShell on
+        Windows)."""
         import driver
 
-        d = driver.write_launchers() if CLAUDE else driver.launcher_dir()
+        d = driver.write_launchers() if CLAUDE or CODEX else driver.launcher_dir()
         return [str(d / ("mindslice.cmd" if WINDOWS else "mindslice"))]
 
     def configure(self, workspace: Path | str | None) -> None:
         """Set the plugin's workspace option as the host passes it on. Claude gives it to hooks. Antigravity gives
-        it only to the MCP server, which records it in the bridge file the hook reads: write that record too."""
+        it only to the MCP server, which records it in the bridge file the hook reads: write that record too. Codex
+        has no options: the plugin's settings file, which `mindslice plugin-config` writes."""
+        if CODEX:
+            import driver
+
+            settings = driver.load_settings()
+            if workspace is None:
+                settings.pop("workspace", None)
+            else:
+                settings["workspace"] = str(workspace)
+            driver.save_settings(settings)
+            return
         if CLAUDE:
             if workspace is None:
                 os.environ.pop("CLAUDE_PLUGIN_OPTION_WORKSPACE", None)
@@ -124,9 +137,20 @@ class PluginTestCase(unittest.TestCase):
 
     def hook(self, slot: int = 1, session: str = "s1", **kw) -> subprocess.CompletedProcess:
         """Run the session-start hook as the host does; ``stdout`` is the text of page ``slot`` ("" if none).
-        Claude runs one process per slot; Antigravity runs adapter/hook.py once and gets every page as JSON."""
+        Claude runs one process per slot; Codex too, through adapter/hook.py, which prints the page as JSON;
+        Antigravity runs adapter/hook.py once and gets every page as JSON."""
         import json
 
+        if CODEX:
+            r = self.run_entry(str(slot), stdin=json.dumps({"session_id": session, "source": "startup",
+                                                            "hook_event_name": "SessionStart"}),
+                               cmd=[sys.executable, str(PLUGIN / "adapter" / "hook.py")], **kw)
+            r.raw = r.stdout  # type: ignore[attr-defined]
+            if r.stdout.strip():
+                out = json.loads(r.stdout)["hookSpecificOutput"]
+                assert out["hookEventName"] == "SessionStart", out
+                r.stdout = out["additionalContext"]
+            return r
         if CLAUDE:
             return self.run_entry("hook", str(slot), stdin=json.dumps({"session_id": session, "source": "startup"}),
                                   **kw)

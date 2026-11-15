@@ -1,0 +1,38 @@
+{
+  "name": "mindslice",
+  "version": "0.1.6-1",
+  "description": "Portable long-term memory: isolated Markdown slices, standing memory in every session, controlled evolution.",
+  "author": {
+    "name": "pancerZH"
+  },
+  "homepage": "https://github.com/pancerZH/MindSlice",
+  "repository": "https://github.com/pancerZH/MindSlice-plugin",
+  "license": "Apache-2.0",
+  "keywords": [
+    "memory",
+    "long-term memory",
+    "mcp",
+    "markdown"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "MindSlice",
+    "shortDescription": "Portable long-term memory",
+    "longDescription": "Long-term memory as plain Markdown cards in a folder you choose. Your standing memory (persona, reply language, standing rules) reaches every session through startup hooks, the MindSlice MCP tools search, read and write the rest, and changes to always-loaded memory wait for your approval.",
+    "developerName": "pancerZH",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/pancerZH/MindSlice",
+    "defaultPrompt": [
+      "Set up my MindSlice memory",
+      "Remember that I prefer concise answers in English",
+      "Review the memory changes waiting for my approval"
+    ],
+    "logo": "./assets/logo.png",
+    "composerIcon": "./assets/logo.png"
+  }
+}

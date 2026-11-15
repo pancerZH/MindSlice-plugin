@@ -14,7 +14,7 @@
     "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
     "NOTICE": "c59a0c528eef8df48a71b5359c4c356ed5f1ef5283a01a7cc837e59464fd1fbf",
     "README.md": "553d5ec830150ecb7d2097256e2de98047843ad9ba2ebba3f0493fd9266947c3",
-    "adapter/core.py": "106aa7109c1b227639361d21e81980a5fd2cd3ac54d75a86fda6a020be2c6b61",
+    "adapter/core.py": "7a41878a6ac716b8e19a2b9f57ba8854dac59acfd292a07423ce9b94abd112b4",
     "adapter/driver.py": "7ed1d859a959d7b3b54ba2565a83c278df14d00f3ed8ad3160c2894e322cadec",
     "adapter/entry.py": "5cb621c27c6c34cb948e1c96623aa8d01d8992adb4bdc03f81752ede0ee376af",
     "adapter/hook.py": "c8e606bd5addfe8b442c6f1bf4e6ca20b586984fbe9003611d1ded50e635d1ee",

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import errno
 import hashlib
 import json
 import os
@@ -188,6 +189,10 @@ def plugin_tools(reinjects: bool | None = None) -> list[dict[str, Any]]:
     manifest = next(t for t in tools if t["name"] == "manifest")
     manifest["description"] = apply_rewrites(manifest["description"], MANIFEST_REWRITES,
                                              driver.reinjects_on_compact if reinjects is None else reinjects)
+    for tool in tools:  # hints a host acts on (Codex runs read-only tools without an approval prompt)
+        hints = getattr(driver, "TOOL_ANNOTATIONS", {}).get(tool["name"])
+        if hints:
+            tool["annotations"] = dict(tool.get("annotations") or {}, **hints)
     return tools
 
 
@@ -302,6 +307,9 @@ def resolve(entry: str, cli_value: str | None = None) -> Target:
 
 
 def unset_message() -> str:
+    custom = getattr(driver, "unset_message", None)
+    if custom is not None:
+        return custom()
     return ("The MindSlice plugin has no memory workspace configured yet, so no memory is loaded in this session "
             "and the MindSlice tools are unavailable. Set \"Memory workspace\" in the plugin's options (run /plugin, "
             "open mindslice, configure) to an existing MindSlice workspace or to a new or empty folder, then start "
@@ -309,6 +317,9 @@ def unset_message() -> str:
 
 
 def occupied_message(path: Path) -> str:
+    custom = getattr(driver, "occupied_message", None)
+    if custom is not None:
+        return custom(path)
     return (f"The configured MindSlice memory workspace {path} is not empty and is not a MindSlice workspace "
             f"(no {MOUNTS_FILE}). The plugin left it untouched and loaded no memory. Point the plugin's \"Memory "
             "workspace\" option at an empty folder, a new path or an existing MindSlice workspace (/plugin, or "
@@ -361,7 +372,7 @@ def preamble(path: Path) -> str:
             "always-loaded cards in full. Read every page: they are numbered page i/n with one snapshot id, and the "
             "last one ends with a \"complete\" line. You do not need manifest() for this content; call "
             "manifest(include_always=false) to browse the mounted slices.\n"
-            + driver.CLI_HINT
+            + (driver.cli_hint() if hasattr(driver, "cli_hint") else driver.CLI_HINT)
             + "".join("\n" + note for note in getattr(driver, "startup_notes", lambda: [])()))
 
 
@@ -1030,12 +1041,17 @@ def main(argv: Sequence[str]) -> int:
     try:
         if argv[:1] == ["plugin-status"]:
             return run_status(argv[1:])
+        if argv[:1] == ["plugin-config"] and hasattr(driver, "run_config"):  # hosts without plugin options
+            return driver.run_config(argv[1:])
         _, i, _ = _scan(argv)
         if i is not None and argv[i] == "plugin-status":  # after global options too, as upstream allows: -w DIR plugin-status
             return run_status(argv[:i] + argv[i + 1:])
         return run_cli(argv)
-    except PermissionError as exc:
-        # e.g. a terminal sandbox that keeps the agent's commands out of the workspace: one line, not a traceback
+    except OSError as exc:
+        # e.g. a terminal sandbox that keeps the agent's commands out of the workspace (access denied, or a
+        # read-only mount as Codex's sandbox presents it): one line, not a traceback
+        if not isinstance(exc, PermissionError) and exc.errno != errno.EROFS:
+            raise
         sys.stderr.write(f"mindslice plugin: {exc}\n")
         hint = getattr(driver, "PERMISSION_HINT", None)
         if hint:

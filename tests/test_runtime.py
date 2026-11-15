@@ -369,7 +369,7 @@ class CliRoutingTest(PluginTestCase):
         # the Bash tool and the user's terminal: no CLAUDE_PLUGIN_ROOT, no CLAUDE_PLUGIN_DATA
         import driver
 
-        d = driver.write_launchers() if CLAUDE else driver.launcher_dir()
+        d = driver.write_launchers() if CLAUDE or helpers.CODEX else driver.launcher_dir()
         launcher = d / ("mindslice.cmd" if WINDOWS else "mindslice")
         env = {k: v for k, v in os.environ.items() if k not in (ROOT_ENV, DATA_ENV)}
         env["HOME"] = env["USERPROFILE"] = str(self.tmp)
@@ -475,6 +475,8 @@ class IsolationTest(PluginTestCase):
         if CLAUDE:
             self.assertIn("export PATH=", env_file.read_text())  # Forge still calls `mindslice -w ...`
             self.assertNotIn("MINDSLICE_PLUGIN_WORKSPACE", env_file.read_text())
+        elif helpers.CODEX:
+            self.assertEqual(hook.raw, "")  # nothing for Codex to add
         else:
             self.assertEqual(hook.pages, [])
         reqs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},

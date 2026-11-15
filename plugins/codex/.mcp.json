@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "mindslice": {
+      "command": "./adapter/mcp",
+      "cwd": ".",
+      "startup_timeout_sec": 60,
+      "env_vars": [
+        "MINDSLICE_PLUGIN_ISOLATE"
+      ]
+    }
+  }
+}
