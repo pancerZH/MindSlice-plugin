@@ -15,6 +15,11 @@ Measured on Antigravity CLI 1.5.9 (PLAN section 12):
 - The agent's ``run_command`` has the plugin's ``bin/`` on its PATH, but neither ``PLUGIN_ROOT`` nor
   ``PLUGIN_DATA``; it has ``ANTIGRAVITY_APP_DATA_DIR``, whose ``plugin_data/<plugin folder>`` is the same data
   directory, so the CLI shares the engine copy and the bridge file with the hook and the MCP server.
+- Windows, measured with ``enableTerminalSandbox`` on: inside ``run_command`` the ``py`` launcher exists but finds
+  no Python (the launchers therefore try each interpreter before using it), and reading the workspace, which lies
+  outside the project, is denied (``--add-dir`` does not lift it). The agent then reruns the command with
+  ``BypassSandbox``; with the AUTO permission preset that happens without a prompt. Hooks and the MCP server are
+  not sandboxed. ``PERMISSION_HINT`` turns the denial into one line that names the cause.
 """
 
 from __future__ import annotations
@@ -33,6 +38,11 @@ CLI_HINT = ("The `mindslice` CLI is on the PATH of your terminal tool (run_comma
             "default (pass -w for another one); management commands (status, diff, apply, discard, mount, bake, "
             "doctor) are CLI-only. Run `mindslice apply` or `discard` only when the user approves it explicitly "
             "(see /mindslice:review).")
+
+PERMISSION_HINT = ("Access to the memory workspace was denied. Antigravity's terminal sandbox does not let "
+                   "commands read folders outside the project, so `mindslice` commands that use the workspace "
+                   "have to run outside the sandbox (Antigravity asks the user first when its permission "
+                   "settings require it).")
 
 PLUGIN_ROOT = Path(os.path.abspath(__file__)).parent.parent
 REAL_PLUGIN_ROOT = Path(__file__).resolve().parent.parent

@@ -19,7 +19,7 @@ if [ "${OS:-}" = "Windows_NT" ]; then
   fi
 fi
 for py in $pythons; do
-  if command -v "$py" >/dev/null 2>&1; then
+  if command -v "$py" >/dev/null 2>&1 && "$py" -c '' >/dev/null 2>&1; then
     exec "$py" "$entry" mcp
   fi
 done

@@ -1027,9 +1027,17 @@ def main(argv: Sequence[str]) -> int:
         return driver.run_hook(argv[1:])
     if argv[:1] == ["mcp"]:
         return run_mcp(argv[1:])
-    if argv[:1] == ["plugin-status"]:
-        return run_status(argv[1:])
-    _, i, _ = _scan(argv)
-    if i is not None and argv[i] == "plugin-status":  # after global options too, as upstream allows: -w DIR plugin-status
-        return run_status(argv[:i] + argv[i + 1:])
-    return run_cli(argv)
+    try:
+        if argv[:1] == ["plugin-status"]:
+            return run_status(argv[1:])
+        _, i, _ = _scan(argv)
+        if i is not None and argv[i] == "plugin-status":  # after global options too, as upstream allows: -w DIR plugin-status
+            return run_status(argv[:i] + argv[i + 1:])
+        return run_cli(argv)
+    except PermissionError as exc:
+        # e.g. a terminal sandbox that keeps the agent's commands out of the workspace: one line, not a traceback
+        sys.stderr.write(f"mindslice plugin: {exc}\n")
+        hint = getattr(driver, "PERMISSION_HINT", None)
+        if hint:
+            sys.stderr.write(f"mindslice plugin: {hint}\n")
+        return 1

@@ -15,6 +15,8 @@ here=$(CDPATH= cd -- "$(dirname -- "$self")" && pwd)
 entry="$here/@ENTRY@"
 ## On Windows (Git Bash), py comes first: python3 is often the Microsoft Store stub. Elsewhere a `py` on PATH
 ## may be an unrelated tool (pip's pythonpy), and exec leaves no fallback, so it is not tried at all.
+## A candidate is used only when it starts: inside Antigravity's terminal sandbox py exists but finds no Python,
+## and the Store stub python3 fails the same way.
 pythons="python3 python"
 if [ "${OS:-}" = "Windows_NT" ]; then
   pythons="py python3 python"
@@ -23,7 +25,7 @@ if [ "${OS:-}" = "Windows_NT" ]; then
   fi
 fi
 for py in $pythons; do
-  if command -v "$py" >/dev/null 2>&1; then
+  if command -v "$py" >/dev/null 2>&1 && "$py" -c '' >/dev/null 2>&1; then
     exec "$py" "$entry" @ARGS@
   fi
 done

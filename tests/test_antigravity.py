@@ -424,6 +424,40 @@ class LauncherTest(PluginTestCase):
         self.assertEqual(none.returncode, 1)
         self.assertIn("Python 3.12 or newer is required", none.stderr)
 
+    @unittest.skipIf(WINDOWS, "POSIX launchers")
+    def test_broken_candidate_is_skipped(self) -> None:
+        # Antigravity's terminal sandbox on Windows: py exists but reports "No installed Python found!"
+        broken = self.tmp / "bin-broken"
+        broken.mkdir()
+        for name in ("py", "python3"):
+            exe = broken / name
+            exe.write_text('#!/bin/sh\necho "No installed Python found!" >&2\nexit 103\n')
+            exe.chmod(0o755)
+        py = self.fake_python("python", "PY")
+        tools = self.tmp / "tools"
+        tools.mkdir()
+        for name in ("dirname", "readlink"):
+            (tools / name).symlink_to(shutil.which(name))
+        r = subprocess.run([str(PLUGIN / "bin" / "mindslice"), "status"], capture_output=True, text=True,
+                           env={"PATH": f"{broken}:{py.parent}:{tools}", "OS": "Windows_NT"})
+        self.assertEqual(r.stdout.strip(), f"PY {PLUGIN / 'bin' / '..' / 'adapter' / 'entry.py'} status", r.stderr)
+
+    @unittest.skipUnless(WINDOWS, "cmd launchers")
+    def test_cmd_launcher_skips_broken_py(self) -> None:
+        # a py.exe that fails (where.exe rejects -c), then the real Python as `python`; a .bat would not do: cmd
+        # runs a batch file named without `call` in place of the launcher, so the fallback would never be reached
+        broken = self.tmp / "bin-broken"
+        broken.mkdir()
+        system32 = Path(os.environ["SystemRoot"]) / "System32"
+        shutil.copy(system32 / "where.exe", broken / "py.exe")
+        real = Path(sys.executable).parent
+        self.assertTrue((real / "python.exe").is_file(), real)
+        env = dict(os.environ, PATH=f"{broken};{real};{system32}", HOME=str(self.tmp), USERPROFILE=str(self.tmp))
+        r = subprocess.run(["cmd", "/c", str(PLUGIN / "bin" / "mindslice.cmd"), "--version"], capture_output=True,
+                           text=True, env=env, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("mindslice 0.", r.stdout)
+
     @unittest.skipIf(WINDOWS, "POSIX links")
     def test_linked_cli(self) -> None:
         # the setup skill's optional ~/.local/bin/mindslice link (a relative link, followed twice)

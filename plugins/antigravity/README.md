@@ -22,11 +22,14 @@ page on the Customizations page of the Antigravity app), turn **mindslice** on a
   (recommended for small local models).
 
 Start a new conversation, then run `/mindslice:setup` to seed the memory and verify that it reaches the model.
-To update, pull the repository and run the same `agy plugin install` again; your settings are kept.
+To update, pull the repository and run the same `agy plugin install` again; your settings are kept. On
+Windows, exit running `agy` sessions first: their MindSlice MCP server keeps the plugin folder open, and the
+install fails with "being used by another process".
 
 Requirements: Python 3.12 or newer somewhere on the machine (`python3.12`/`python3.13` on `PATH`, Homebrew,
 `~/.local/bin` or pyenv are found automatically), and a `python3` (or, on Windows, the `py` launcher) to start
-it. Tested on Linux with the Antigravity CLI; macOS should behave the same; Windows is not verified yet.
+it. Tested with the Antigravity CLI on Linux and Windows; macOS should behave like Linux; the Antigravity app
+is not verified yet.
 
 The plugin does not bundle the MindSlice engine. In the first conversation it downloads the pinned release
 from PyPI (`mindslice==0.1.6`, a 150 KB pure-Python wheel with no dependencies), checks its sha256 and unpacks
@@ -60,6 +63,13 @@ mindslice status          # mounts, pending review, unbaked changes
 mindslice diff            # staged changes
 mindslice doctor          # full engine checks
 ```
+
+With Antigravity's terminal sandbox on (`enableTerminalSandbox`), the agent's commands cannot read folders
+outside the project, so a `mindslice` command that uses your workspace fails inside the sandbox and the agent
+reruns it outside (tested on Windows). With the default permission preset that happens without a prompt; a
+stricter preset asks you first, and where sandbox bypass is disabled the CLI steps of `/mindslice:review`,
+`/mindslice:setup` and `/mindslice:slice-maintainer` do not work from the agent. The `SessionStart` hook and the
+MCP tools are not sandboxed and always work.
 
 In your own terminal, run the plugin's `bin/mindslice` (for example
 `~/.gemini/config/plugins/mindslice/bin/mindslice`, or link it into `~/.local/bin`); on Windows,

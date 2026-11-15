@@ -297,6 +297,25 @@ class CliRoutingTest(PluginTestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue((ws / "overlay" / "t" / "five.md").is_file())
 
+    def test_permission_error_is_one_line(self) -> None:
+        # Antigravity's terminal sandbox denies reading the workspace: no traceback, and the driver's hint
+        import contextlib
+        import io
+        from unittest import mock
+
+        import driver
+
+        denied = PermissionError(13, "Access is denied", str(self.tmp / "ws" / "mounts.toml"))
+        for argv in (["status"], ["plugin-status"], ["-w", str(self.tmp), "plugin-status"]):
+            err = io.StringIO()
+            with mock.patch.object(core, "resolve", side_effect=denied), contextlib.redirect_stderr(err):
+                self.assertEqual(core.main(argv), 1, argv)
+            lines = err.getvalue().splitlines()
+            self.assertIn("Access is denied", lines[0], argv)
+            self.assertNotIn("Traceback", err.getvalue(), argv)
+            hint = getattr(driver, "PERMISSION_HINT", None)
+            self.assertEqual(lines[1:], [f"mindslice plugin: {hint}"] if hint else [], argv)
+
     def test_plugin_workspace_used_outside_workspaces(self) -> None:
         ws = self.tmp / "plugin-ws"
         self.configure(ws)
