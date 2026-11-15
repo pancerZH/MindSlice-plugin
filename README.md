@@ -7,4 +7,4 @@ Engine: [MindSlice](https://github.com/pancerZH/MindSlice) (installed from PyPI 
 ## Supported plugins
 
 - **Claude Code**: Linux, macOS, Windows (with Git for Windows) ([plugins/claude](plugins/claude/README.md))
-- **Antigravity**: tested with the `agy` CLI on Linux and Windows; the Antigravity app and macOS are not verified yet ([plugins/antigravity](plugins/antigravity/README.md))
+- **Antigravity**: tested with the `agy` CLI (Linux, Windows) and the Antigravity app (Windows); macOS is not verified yet ([plugins/antigravity](plugins/antigravity/README.md))

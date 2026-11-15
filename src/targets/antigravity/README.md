@@ -23,13 +23,13 @@ page on the Customizations page of the Antigravity app), turn **mindslice** on a
 
 Start a new conversation, then run `/mindslice:setup` to seed the memory and verify that it reaches the model.
 To update, pull the repository and run the same `agy plugin install` again; your settings are kept. On
-Windows, exit running `agy` sessions first: their MindSlice MCP server keeps the plugin folder open, and the
-install fails with "being used by another process".
+Windows, exit running `agy` sessions and the Antigravity app first: their MindSlice MCP server keeps the
+plugin folder open, and the install fails with "being used by another process".
 
 Requirements: Python 3.12 or newer somewhere on the machine (`python3.12`/`python3.13` on `PATH`, Homebrew,
 `~/.local/bin` or pyenv are found automatically), and a `python3` (or, on Windows, the `py` launcher) to start
-it. Tested with the Antigravity CLI on Linux and Windows; macOS should behave like Linux; the Antigravity app
-is not verified yet.
+it. Tested with the Antigravity CLI on Linux and Windows, and the Antigravity app on Windows; macOS should
+behave like Linux, and is not verified yet.
 
 The plugin does not bundle the MindSlice engine. In the first conversation it downloads the pinned release
 from PyPI (`mindslice==0.1.6`, a 150 KB pure-Python wheel with no dependencies), checks its sha256 and unpacks
