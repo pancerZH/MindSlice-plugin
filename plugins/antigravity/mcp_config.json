@@ -7,6 +7,20 @@
         "MINDSLICE_PLUGIN_OPTION_WORKSPACE": "${workspace}",
         "MINDSLICE_PLUGIN_STAGE_WRITES": "${stage_writes}"
       },
+      "tools": {
+        "manifest": {
+          "eager": true
+        },
+        "search": {
+          "eager": true
+        },
+        "read": {
+          "eager": true
+        },
+        "write": {
+          "eager": true
+        }
+      },
       "variables": [
         {
           "name": "workspace",

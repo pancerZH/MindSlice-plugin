@@ -50,7 +50,7 @@ PLUGIN_ROOT = ADAPTER_DIR.parent
 MOUNTS_FILE = "mounts.toml"
 
 UPSTREAM_CONTRACT = (
-    "Workspace", "Workspace.init", "Workspace.discover", "Workspace.boot", "Workspace.table",
+    "Workspace", "Workspace.init", "Workspace.discover", "Workspace.boot", "Workspace.manifest", "Workspace.table",
     "operations.boot.render_markdown", "operations.boot.HEADER",
     "interfaces.mcp_server.MCPServer", "interfaces.mcp_server.TOOLS", "interfaces.mcp_server.INSTRUCTIONS",
     "interfaces.mcp_server.EMPTY_WORKSPACE_HINT", "interfaces.mcp_server.ensure_utf8_stdio",
@@ -170,15 +170,17 @@ class TextRewrite:
     no_reinject: str   # host only delivers them at session start
 
 
+_READ_FIRST = "Consult memory before exploring a codebase or answering project, decision or preference questions."
 _START_OLD = (
     "Start with manifest() to see the mounted slices, use search() to find relevant cards, and read() an address "
     "for full content (it composes extensions and follows replacements)."
 )
 _START_NEW = (
-    "Your always-loaded cards and these instructions are delivered automatically at session start as "
-    "\"MindSlice standing memory\" pages; call manifest(include_always=false) to see the mounted slices, use "
-    "search() to find relevant cards, and read() an address for full content (it composes extensions and follows "
-    "replacements)."
+    "Your always-loaded cards, mounted slice summary and these instructions are delivered automatically at session "
+    "start as \"MindSlice standing memory\" pages; search() relevant slices first, read() an address for full "
+    "content (it composes extensions and follows replacements), and call manifest(include_always=false) when you "
+    "need fuller slice details."
+    + ("" if _READ_FIRST in INSTRUCTIONS else f" {_READ_FIRST}")
 )
 _COMPACT_OLD = (
     "After your context is compacted or summarized, call manifest() again before continuing: its always_loaded is "
@@ -234,6 +236,7 @@ def plugin_tools(reinjects: bool | None = None) -> list[dict[str, Any]]:
     manifest["description"] = apply_rewrites(manifest["description"], MANIFEST_REWRITES,
                                              driver.reinjects_on_compact if reinjects is None else reinjects)
     for tool in tools:  # a host may act on these (Codex runs read-only tools without an approval prompt)
+        tool["_meta"] = dict(tool.get("_meta") or {}, **{"anthropic/alwaysLoad": True})
         if tool["name"] in READ_ONLY_TOOLS:
             tool["annotations"] = dict(tool.get("annotations") or {}, readOnlyHint=True, openWorldHint=False)
     return tools
@@ -425,16 +428,39 @@ def snapshot(path: Path) -> dict[str, Any]:
     with Workspace(path) as ws:
         snap = ws.boot()
         snap["overlay_alias"] = ws.table().overlay.alias
+        man = ws.manifest(limit=20, max_folders_per_mount=5, include_always=False)
+        snap["mounts"] = man["mounts"]
+        snap["total_mounts"] = man["total_mounts"]
     return snap
 
 
-def preamble(path: Path) -> str:
+def mounts_line(snap: dict[str, Any]) -> str:
+    if snap.get("empty_workspace"):
+        return ""
+    mounts = snap.get("mounts") or []
+    if not mounts:
+        return ""
+    items: list[str] = []
+    for m in mounts:
+        count = m.get("card_count", 0)
+        word = "card" if count == 1 else "cards"
+        folders = [f["name"] for f in (m.get("folders") or [])]
+        suffix = (": " + ", ".join(folders) + (", …" if m.get("folders_truncated") else "")) if folders else ""
+        items.append(f"`{m['alias']}` ({count} {word}{suffix})")
+    extra = (snap.get("total_mounts") or len(mounts)) - len(mounts)
+    if extra > 0:
+        items.append(f"… +{extra} more")
+    return "Mounted slices: " + ", ".join(items) + ".\n"
+
+
+def preamble(path: Path, snap: dict[str, Any] | None = None) -> str:
     return ("# MindSlice plugin: standing memory\n\n"
             f"Memory workspace: `{path}`\n"
-            "These \"MindSlice standing memory\" pages deliver MindSlice's usage instructions and the user's "
+            + mounts_line(snap or {})
+            + "These \"MindSlice standing memory\" pages deliver MindSlice's usage instructions and the user's "
             "always-loaded cards in full. Read every page: they are numbered page i/n with one snapshot id, and the "
             "last one ends with a \"complete\" line. You do not need manifest() for this content; call "
-            "manifest(include_always=false) to browse the mounted slices.\n"
+            "manifest(include_always=false) only when you need fuller slice metadata.\n"
             + driver.cli_hint()
             + "".join("\n" + note for note in getattr(driver, "startup_notes", lambda: [])()))
 
@@ -454,7 +480,7 @@ def pending_block(snap: dict[str, Any]) -> str | None:
 
 
 def assemble(path: Path, snap: dict[str, Any]) -> list[Block]:
-    blocks = [Block(preamble(path), "preamble"), Block(plugin_instructions(), "instructions")]
+    blocks = [Block(preamble(path, snap), "preamble"), Block(plugin_instructions(), "instructions")]
     pending = pending_block(snap)
     if pending:
         blocks.append(Block(pending, "pending approval"))

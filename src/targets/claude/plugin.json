@@ -1,6 +1,6 @@
 {
   "name": "mindslice",
-  "version": "0.1.8-1",
+  "version": "0.2.0-1",
   "description": "Portable long-term memory: isolated Markdown slices, standing memory in every session, controlled evolution.",
   "author": {
     "name": "pancerZH"
@@ -31,6 +31,7 @@
   "mcpServers": {
     "mindslice": {
       "command": "${CLAUDE_PLUGIN_ROOT}/adapter/mcp",
+      "alwaysLoad": true,
       "env": {
         "MINDSLICE_PLUGIN_OPTION_WORKSPACE": "${user_config.workspace}",
         "MINDSLICE_PLUGIN_STAGE_WRITES": "${user_config.stage_writes}"

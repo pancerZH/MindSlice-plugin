@@ -64,7 +64,24 @@ class HookTest(PluginTestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertTrue((path / "mounts.toml").is_file())
             self.assertIn("# Empty memory workspace", r.stdout)
+            self.assertNotIn("Mounted slices:", r.stdout)
             self.assertIn("standing memory complete · 1 pages · 0 cards", r.stdout)
+
+    def test_mounted_slices_summary_in_preamble(self) -> None:
+        from mindslice import Workspace
+
+        ws = self.tmp / "seeded"
+        slice_dir = self.tmp / "proj.slice"
+        (slice_dir / "arch").mkdir(parents=True)
+        (slice_dir / "arch" / "overview.md").write_text("# Arch\n\nOverview.\n\n- Fact.\n", encoding="utf-8")
+        with Workspace.init(ws) as w:
+            w.write("notes/a", summary="Note.", content="- Item.", reason="seed")
+            w.mount(slice_dir, alias="@proj")
+        self.configure(ws)
+        r = self.hook(1, session="mounted-summary")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("Mounted slices: `@overlay` (1 card: notes), `@proj` (1 card: arch).", r.stdout)
+        self.assertIn("Consult memory before exploring a codebase", r.stdout)
 
     def make_partial_init(self, path: Path) -> None:
         """What Workspace.init has written just before it writes mounts.toml."""

@@ -122,6 +122,7 @@ class OutputTest(unittest.TestCase):
         manifest = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())
         mcp = manifest["mcpServers"]["mindslice"]
         self.assertEqual(mcp["command"], "${CLAUDE_PLUGIN_ROOT}/adapter/mcp")
+        self.assertIs(mcp["alwaysLoad"], True)
         self.assertNotIn("args", mcp)
         self.assertEqual(mcp["env"]["MINDSLICE_PLUGIN_OPTION_WORKSPACE"], "${user_config.workspace}")
         self.assertNotIn("python", manifest["userConfig"])

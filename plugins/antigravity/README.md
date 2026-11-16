@@ -32,10 +32,10 @@ it. Tested with the Antigravity CLI on Linux and Windows, and the Antigravity ap
 behave like Linux, and is not verified yet.
 
 The plugin does not bundle the MindSlice engine. In the first conversation it downloads the pinned release
-from PyPI (`mindslice==0.1.8`, a 150 KB pure-Python wheel with no dependencies), checks its sha256 and unpacks
+from PyPI (`mindslice==0.2.0`, a 150 KB pure-Python wheel with no dependencies), checks its sha256 and unpacks
 it into the plugin's data directory, where it stays across plugin updates. That first conversation needs
 internet access (`HTTPS_PROXY` is honoured). Offline, install it yourself first:
-`python3.12 -m pip install --user mindslice==0.1.8`, or download the wheel and set `MINDSLICE_PLUGIN_WHEEL`
+`python3.12 -m pip install --user mindslice==0.2.0`, or download the wheel and set `MINDSLICE_PLUGIN_WHEEL`
 to the file.
 
 ## What the plugin provides

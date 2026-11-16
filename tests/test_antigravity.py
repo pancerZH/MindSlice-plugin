@@ -60,6 +60,7 @@ class LayoutTest(unittest.TestCase):
         placeholders = set(re.findall(r"\$\{([A-Za-z_]+)\}", json.dumps(server["env"])))
         self.assertEqual(placeholders, set(names))  # every placeholder declared, so it is substituted
         self.assertEqual(server["env"]["MINDSLICE_PLUGIN_OPTION_WORKSPACE"], "${workspace}")
+        self.assertEqual(server["tools"], {t: {"eager": True} for t in ("manifest", "search", "read", "write")})
 
     def test_hooks_json(self) -> None:
         hooks = load("hooks.json")

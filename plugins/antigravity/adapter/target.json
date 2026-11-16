@@ -1,12 +1,12 @@
 {
   "target": "antigravity",
-  "plugin_version": "0.1.8-1",
-  "engine_version": "0.1.8",
+  "plugin_version": "0.2.0-1",
+  "engine_version": "0.2.0",
   "page_limit": 15500,
   "hook_slots": 8,
   "engine": {
-    "version": "0.1.8",
-    "url": "https://files.pythonhosted.org/packages/73/fb/deb127ce6b4c5678cfe2deed4c324bd70005d54fc165aec1278bac8f995d/mindslice-0.1.8-py3-none-any.whl",
-    "sha256": "66326530896acc026fcec7c12fa8fbaa60984d7eed80b169ac15730de2d83a32"
+    "version": "0.2.0",
+    "url": "https://files.pythonhosted.org/packages/c2/65/f3d7a06ca99a2f1cf4c1fa765803d750dd4192138e33fdcd34e79dffd072/mindslice-0.2.0-py3-none-any.whl",
+    "sha256": "c7a4db1e93eb6c87ddf157b42889232664c184d41095beaad261ce4552e24d35"
   }
 }

@@ -47,6 +47,7 @@ class MCPTest(PluginTestCase):
             # only write changes the memory (Codex runs tools that declare themselves read-only without asking)
             hints = {t["name"]: t.get("annotations", {}).get("readOnlyHint") for t in tools}
             self.assertEqual(hints, {"manifest": True, "search": True, "read": True, "write": None})
+            self.assertTrue(all(t.get("_meta", {}).get("anthropic/alwaysLoad") is True for t in tools))
             manifest = next(t for t in tools if t["name"] == "manifest")
             self.assertNotIn("again after the conversation is compacted", manifest["description"])
             self.assertIn("include_always=false", manifest["description"])
@@ -55,6 +56,7 @@ class MCPTest(PluginTestCase):
             m = call(s, "manifest", {})
             self.assertNotEqual(m["instructions"], INSTRUCTIONS)
             self.assertEqual(m["instructions"], core.plugin_instructions())
+            self.assertIn("Consult memory before exploring a codebase", m["instructions"])
 
     def test_large_always_set_omits_bodies_without_spurious_updates(self) -> None:
         for i in range(6):
