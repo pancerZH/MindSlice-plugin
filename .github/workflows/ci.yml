@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        target: [claude, antigravity, codex]
+        target: [claude, antigravity, codex, deepseek-harness]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

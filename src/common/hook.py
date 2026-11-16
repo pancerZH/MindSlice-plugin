@@ -27,6 +27,8 @@ def _host(here):
         target = None
     if target == "codex":
         return (lambda m: {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": m}}), ""
+    if target == "deepseek-harness":
+        return (lambda m: {"systemPromptSections": [m]}), "{}"
     return (lambda m: {"injectSteps": [{"systemMessage": {"systemMessage": m}}]}), "{}"
 
 

@@ -1,0 +1,16 @@
+{
+  "target": "deepseek-harness",
+  "driver": "deepseek_harness",
+  "host": "deepseek-harness",
+  "output": "plugins/deepseek-harness",
+  "manifest_path": "package.json",
+  "skill_prefix": "mindslice-",
+  "page_limit": 15500,
+  "hook_slots": 8,
+  "skills": {
+    "setup": true,
+    "review": true,
+    "slice-maintainer": true,
+    "slice-builder": false
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "dsh-mindslice",
+  "version": "0.1.6-1",
+  "description": "Portable long-term memory for DeepSeek Harness: isolated Markdown slices, standing memory in every session, controlled evolution.",
+  "author": "pancerZH",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/pancerZH/MindSlice",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pancerZH/MindSlice-plugin",
+    "directory": "plugins/deepseek-harness"
+  },
+  "keywords": [
+    "memory",
+    "long-term memory",
+    "mcp",
+    "markdown",
+    "mindslice"
+  ],
+  "icon": "./assets/logo.png",
+  "type": "module",
+  "main": "./adapter/plugin.js",
+  "exports": {
+    ".": "./adapter/plugin.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "adapter",
+    "assets",
+    "bin",
+    "skills",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    ".build-info.json"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

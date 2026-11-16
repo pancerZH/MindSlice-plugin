@@ -93,8 +93,10 @@ class OutputTest(unittest.TestCase):
         self.assertFalse(any(f.startswith("engine/") or "/mindslice/" in f for f in files), "engine is not shipped")
         total = sum((PLUGIN / f).stat().st_size for f in files if not f.lower().endswith(build.IMAGE_SUFFIXES))
         self.assertLessEqual(total, build.MAX_TARGET_BYTES)
+        skill_prefix = helpers.target_config_src().get("skill_prefix", "")
         for f in ("adapter/entry.py", "adapter/core.py", "adapter/driver.py", "adapter/provision.py", "adapter/mcp",
-                  "adapter/mcp.cmd", "LICENSE", "NOTICE", "skills/setup/SKILL.md", "skills/review/SKILL.md"):
+                  "adapter/mcp.cmd", "LICENSE", "NOTICE", f"skills/{skill_prefix}setup/SKILL.md",
+                  f"skills/{skill_prefix}review/SKILL.md"):
             self.assertIn(f, files)
         if not CLAUDE:
             return  # the rest is Claude's layout; Antigravity's is checked in test_antigravity
@@ -148,6 +150,10 @@ class OutputTest(unittest.TestCase):
             p = PLUGIN / rel
             if p.is_file():
                 ast.parse(p.read_text(encoding="utf-8"), filename=rel, feature_version=(3, 8))
+        plugin_js = PLUGIN / "adapter" / "plugin.js"
+        if plugin_js.is_file() and shutil.which("node"):
+            r = subprocess.run(["node", "--check", str(plugin_js)], capture_output=True, text=True, timeout=30)
+            self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_target_pins_the_locked_wheel(self) -> None:
         engine = json.loads((PLUGIN / "adapter" / "target.json").read_text())["engine"]

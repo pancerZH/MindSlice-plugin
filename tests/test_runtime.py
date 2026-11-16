@@ -383,7 +383,7 @@ class CliRoutingTest(PluginTestCase):
         # the Bash tool and the user's terminal: no CLAUDE_PLUGIN_ROOT, no CLAUDE_PLUGIN_DATA
         import driver
 
-        d = core.write_launchers() if CLAUDE or helpers.CODEX else driver.launcher_dir()
+        d = core.write_launchers() if CLAUDE or helpers.CODEX or helpers.DSH else driver.launcher_dir()
         launcher = d / ("mindslice.cmd" if WINDOWS else "mindslice")
         env = {k: v for k, v in os.environ.items() if k not in (ROOT_ENV, DATA_ENV)}
         env["HOME"] = env["USERPROFILE"] = str(self.tmp)

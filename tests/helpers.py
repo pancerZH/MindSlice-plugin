@@ -18,6 +18,7 @@ ENTRY = PLUGIN / "adapter" / "entry.py"
 WINDOWS = os.name == "nt"
 CLAUDE = TARGET == "claude"
 CODEX = TARGET == "codex"
+DSH = TARGET == "deepseek-harness"
 # What the host sets for hooks and the MCP server: the plugin's data directory and its root.
 DATA_ENV, ROOT_ENV = ("CLAUDE_PLUGIN_DATA", "CLAUDE_PLUGIN_ROOT") if CLAUDE else ("PLUGIN_DATA", "PLUGIN_ROOT")
 
@@ -70,7 +71,8 @@ sys.path.insert(0, str(ENGINE))
 # Variables that would point a test at the developer's real memory.
 SCRUB = ("MINDSLICE_PLUGIN_WHEEL", "MINDSLICE_PLUGIN_PYTHON", "CLAUDE_PLUGIN_OPTION_PYTHON", "MINDSLICE_PLUGIN_OPTION_WORKSPACE", "CLAUDE_PLUGIN_ROOT", "MINDSLICE_WORKSPACE", "MINDSLICE_PLUGIN_WORKSPACE", "MINDSLICE_PLUGIN_ISOLATE", "CLAUDE_PLUGIN_OPTION_WORKSPACE",
          "CLAUDE_PLUGIN_DATA", "CLAUDE_ENV_FILE", "MINDSLICE_PLUGIN_STAGE_WRITES", "CLAUDE_PLUGIN_OPTION_STAGE_WRITES",
-         "PLUGIN_DATA", "PLUGIN_ROOT", "MINDSLICE_PLUGIN_DATA", "ANTIGRAVITY_APP_DATA_DIR")
+         "PLUGIN_DATA", "PLUGIN_ROOT", "MINDSLICE_PLUGIN_DATA", "ANTIGRAVITY_APP_DATA_DIR",
+         "DSH_HOME", "DSH_PROFILE_DIR")
 
 
 class PluginTestCase(unittest.TestCase):
@@ -98,20 +100,20 @@ class PluginTestCase(unittest.TestCase):
         self._tmp.cleanup()
 
     def shim(self) -> list[str]:
-        """How the agent's shell tool and a user's terminal run the plugin CLI. Claude and Codex: the launcher the
-        hook writes to <plugin data>/bin. Antigravity: the plugin's own bin/ (mindslice.cmd from cmd/PowerShell on
-        Windows)."""
+        """How the agent's shell tool and a user's terminal run the plugin CLI. Claude, Codex and DeepSeek Harness:
+        the launcher the hook writes to <plugin data>/bin. Antigravity: the plugin's own bin/ (mindslice.cmd from
+        cmd/PowerShell on Windows)."""
         import core
         import driver
 
-        d = core.write_launchers() if CLAUDE or CODEX else driver.launcher_dir()
+        d = core.write_launchers() if CLAUDE or CODEX or DSH else driver.launcher_dir()
         return [str(d / ("mindslice.cmd" if WINDOWS else "mindslice"))]
 
     def configure(self, workspace: Path | str | None) -> None:
         """Set the plugin's workspace option as the host passes it on. Claude gives it to hooks. Antigravity gives
         it only to the MCP server, which records it in the bridge file the hook reads: write that record too. Codex
-        has no options: the plugin's settings file, which `mindslice plugin-config` writes."""
-        if CODEX:
+        and DeepSeek Harness use settings.json, which `mindslice plugin-config` writes."""
+        if CODEX or DSH:
             import driver
 
             settings = driver.load_settings()
@@ -138,11 +140,23 @@ class PluginTestCase(unittest.TestCase):
 
     def hook(self, slot: int = 1, session: str = "s1", **kw) -> subprocess.CompletedProcess:
         """Run the session-start hook as the host does; ``stdout`` is the text of page ``slot`` ("" if none).
-        Claude runs one process per slot. Antigravity and Codex run adapter/hook.py once and get every page as
-        JSON: Antigravity one system message per page, Codex all pages in one additional context (``raw`` is what
-        the hook printed, ``context`` that text, ``pages`` its pages)."""
+        Claude runs one process per slot. Antigravity, Codex and DeepSeek Harness run adapter/hook.py once and get
+        every page as JSON."""
         import json
         import re
+
+        if DSH:
+            r = self.run_entry(stdin=json.dumps({"session_id": session, "hook_event_name": "SessionStart"}),
+                               cmd=[sys.executable, str(PLUGIN / "adapter" / "hook.py")], **kw)
+            r.raw = r.stdout  # type: ignore[attr-defined]
+            pages: list[str] = []
+            if r.stdout.strip():
+                out = json.loads(r.stdout)
+                pages = list(out.get("systemPromptSections") or [])
+            r.pages = pages  # type: ignore[attr-defined]
+            r.context = "\n\n".join(pages)  # type: ignore[attr-defined]
+            r.stdout = pages[slot - 1] if slot <= len(pages) else ""
+            return r
 
         if CODEX:
             r = self.run_entry(stdin=json.dumps({"session_id": session, "source": "startup",

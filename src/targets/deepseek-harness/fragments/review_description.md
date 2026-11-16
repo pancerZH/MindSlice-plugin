@@ -1,0 +1,1 @@
+Review the MindSlice changes waiting in staging (always-loaded memory changes, or every write when "review every write" is on): show each patch and its reason, ask the user, and apply or discard exactly what they approve. Use when the user asks to review or approve pending memory changes, or when the standing memory reports changes awaiting approval.

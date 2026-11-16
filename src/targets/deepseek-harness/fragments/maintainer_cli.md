@@ -1,0 +1,1 @@
+Commands use the plugin's `mindslice` CLI, by the absolute path the standing memory pages give (or `$env:DSH_MINDSLICE_BIN` in PowerShell / `"$DSH_MINDSLICE_BIN"` in bash; it is not on the default `PATH`) and with wider sandbox permission if prompted; it targets the plugin's workspace unless you pass `-w <workspace>` or run it inside another MindSlice workspace.

@@ -36,7 +36,7 @@ REPO = Path(__file__).resolve().parent.parent
 SRC = REPO / "src"
 COMMON = SRC / "common"  # shared by the hosts: skill rules, the logo, the launchers and hook wrapper of the JSON hosts
 LOCK = REPO / "build" / "upstream.lock"
-TARGETS = ("claude", "antigravity", "codex")
+TARGETS = ("claude", "antigravity", "codex", "deepseek-harness")
 CACHE = REPO / "build" / ".cache"
 MAX_TARGET_BYTES = 256_000  # everything but images (the directory limits images separately)
 IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")  # binary images only: an SVG is text and counts
@@ -49,7 +49,9 @@ import rules  # noqa: E402
 # Claude: no top-level bin/, since Chat and Cowork refuse to install a plugin that has one (the launchers live in
 # adapter/). Antigravity: bin/ is what it puts on the agent's PATH; hooks.json, mcp_config.json and rules/ must sit
 # at the plugin root. Codex: .codex-plugin/plugin.json names .mcp.json and skills/; hooks/hooks.json is found by
-# default; bin/ is not put on any PATH (it is the CLI for whoever knows the plugin folder).
+# default; bin/ is not put on any PATH (it is the CLI for whoever knows the plugin folder). DeepSeek Harness: a
+# zero-dependency ESM Cordis bundle with package.json (declaring dsh.bundle.patch), cordis.patch.yml, adapter/plugin.js,
+# adapter/hook.py, MCP launchers, bin/ and skills/.
 OUTPUT_ALLOWED = {
     "claude": (".claude-plugin/", ".build-info.json", "README.md", "LICENSE", "NOTICE", "hooks/", "adapter/",
                "skills/"),
@@ -57,6 +59,8 @@ OUTPUT_ALLOWED = {
                     "README.md", "LICENSE", "NOTICE", "adapter/", "skills/"),
     "codex": (".codex-plugin/", ".mcp.json", "hooks/", "bin/", "assets/", ".build-info.json", "README.md", "LICENSE",
               "NOTICE", "adapter/", "skills/"),
+    "deepseek-harness": ("package.json", "cordis.patch.yml", "bin/", "assets/", ".build-info.json", "README.md",
+                         "LICENSE", "NOTICE", "adapter/", "skills/"),
 }
 LINK_RE = re.compile(r"\]\(([^)\s]+)\)")
 PLACEHOLDER_RE = re.compile(r"\{\{(host|upstream):([A-Za-z0-9_.-]+)\}\}")
@@ -229,17 +233,17 @@ def apply_rules(source: str, text: str, flags: dict[str, bool]) -> str:
     return text
 
 
-def map_upstream(path: str, skills: dict[str, bool]) -> str | None:
+def map_upstream(path: str, skills: dict[str, bool], skill_prefix: str = "") -> str | None:
     """The plugin path an upstream skills/ file is published at, or None."""
     m = re.match(r"skills/([^/]+)/(.+)$", path)
     if not m or m.group(1) not in rules.SKILL_DIRS:
         return None
     out = rules.SKILL_DIRS[m.group(1)]
-    return f"skills/{out}/{m.group(2)}" if skills.get(out) else None
+    return f"skills/{skill_prefix}{out}/{m.group(2)}" if skills.get(out) else None
 
 
 def rewrite_links(text: str, src_path: str, out_path: str, outputs: set[str], up: Upstream,
-                  skills: dict[str, bool]) -> str:
+                  skills: dict[str, bool], skill_prefix: str = "") -> str:
     """Relative links of upstream text at ``src_path``, made valid at ``out_path`` in the plugin: to the published
     copy when there is one, else to the upstream file at the locked commit."""
     def fix(m: re.Match[str]) -> str:
@@ -250,7 +254,7 @@ def rewrite_links(text: str, src_path: str, out_path: str, outputs: set[str], up
         resolved = posixpath.normpath(posixpath.join(posixpath.dirname(src_path), path))
         if resolved.startswith("../"):
             raise BuildError(f"{src_path}: link {target!r} leaves the upstream tree")
-        mapped = map_upstream(resolved, skills)
+        mapped = map_upstream(resolved, skills, skill_prefix)
         if mapped in outputs:
             new = posixpath.relpath(mapped, posixpath.dirname(out_path))
         elif resolved in up.names:
@@ -417,13 +421,26 @@ def codex_files(out: Build, tdir: Path, cfg: dict, manifest: dict) -> None:
     _add_logo(out, manifest["interface"]["logo"].removeprefix("./"))
 
 
-HOSTS = {"claude": claude_files, "antigravity": antigravity_files, "codex": codex_files}
+def deepseek_harness_files(out: Build, tdir: Path, cfg: dict, manifest: dict) -> None:
+    """DeepSeek Harness: package.json (declaring dsh.bundle.patch), cordis.patch.yml, adapter/plugin.js,
+    adapter/hook.py, the MCP launchers, bin/mindslice and the listing logo."""
+    out.add(cfg["manifest_path"], _json(manifest))
+    out.add("cordis.patch.yml", (tdir / "cordis.patch.yml").read_bytes())
+    out.add("adapter/plugin.js", (tdir / "plugin.js").read_bytes())
+    _add_runners(out)
+    out.add("README.md", (tdir / "README.md").read_bytes())
+    _add_logo(out, manifest["icon"].removeprefix("./"))
+
+
+HOSTS = {"claude": claude_files, "antigravity": antigravity_files, "codex": codex_files,
+         "deepseek-harness": deepseek_harness_files}
 
 
 def build_target(name: str, up: Upstream, lock: dict[str, str]) -> Build:
     tdir = SRC / "targets" / name
     cfg = json.loads((tdir / "target.json").read_text(encoding="utf-8"))
-    manifest = json.loads((tdir / "plugin.json").read_text(encoding="utf-8"))
+    manifest_src = tdir / ("package.json" if (tdir / "package.json").is_file() else "plugin.json")
+    manifest = json.loads(manifest_src.read_text(encoding="utf-8"))
     version = manifest.get("version", "")
     if not re.fullmatch(re.escape(lock["version"]) + r"-\d+", version):
         raise BuildError(f"{name}: plugin version {version!r} must be '{lock['version']}-<revision>'")
@@ -452,19 +469,20 @@ def build_target(name: str, up: Upstream, lock: dict[str, str]) -> Build:
 
     # skills
     skills = cfg["skills"]
+    skill_prefix = cfg.get("skill_prefix", "")
     flags = {"builder": bool(skills.get("slice-builder")), "no_builder": not skills.get("slice-builder")}
     fragments = {p.stem: p.read_text(encoding="utf-8").rstrip("\n") for p in sorted((tdir / "fragments").glob("*.md"))}
 
     planned: dict[str, tuple[str, str | None]] = {}  # out path -> (kind, upstream source)
     if skills.get("setup"):
-        planned["skills/setup/SKILL.md"] = ("setup", None)
-        planned["skills/setup/uninstall.md"] = ("target", "uninstall.md")
+        planned[f"skills/{skill_prefix}setup/SKILL.md"] = ("setup", None)
+        planned[f"skills/{skill_prefix}setup/uninstall.md"] = ("target", "uninstall.md")
     if skills.get("review"):
-        planned["skills/review/SKILL.md"] = ("common", "skills/review/SKILL.md")
+        planned[f"skills/{skill_prefix}review/SKILL.md"] = ("common", "skills/review/SKILL.md")
     for upstream_dir in ("slice-maintainer", "slice-builder"):
         if skills.get(upstream_dir):
             for src in up.listdir(f"skills/{upstream_dir}/"):
-                mapped = map_upstream(src, skills)
+                mapped = map_upstream(src, skills, skill_prefix)
                 assert mapped is not None
                 planned[mapped] = ("upstream", src)
     outputs = set(planned)
@@ -475,7 +493,7 @@ def build_target(name: str, up: Upstream, lock: dict[str, str]) -> Build:
             for sel_name, (sel_file, how, anchor) in rules.SELECTIONS.items():
                 text = select(up.text(sel_file), how, anchor, sel_name)
                 text = apply_rules(sel_name, text, flags)
-                parts[sel_name] = rewrite_links(text, sel_file, out_path, outputs, up, skills)
+                parts[sel_name] = rewrite_links(text, sel_file, out_path, outputs, up, skills, skill_prefix)
             template = (SRC / "common" / "setup.md").read_text(encoding="utf-8")
             text = fill(template, fragments, parts, out_path)
         elif kind == "target":
@@ -484,8 +502,10 @@ def build_target(name: str, up: Upstream, lock: dict[str, str]) -> Build:
             text = fill((SRC / "common" / src).read_text(encoding="utf-8"), fragments, {}, out_path)
         else:
             text = apply_rules(src, up.text(src), flags)
-            text = rewrite_links(text, src, out_path, outputs, up, skills)
+            text = rewrite_links(text, src, out_path, outputs, up, skills, skill_prefix)
             text = fill(text, fragments, {}, out_path)
+        if skill_prefix and out_path.endswith("/SKILL.md"):
+            text = re.sub(r"^---\nname: ([^\n]+)\n", rf"---\nname: {skill_prefix}\1\n", text, count=1)
         out.add(out_path, text)
 
     check_links(out.files)
