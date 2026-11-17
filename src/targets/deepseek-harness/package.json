@@ -1,6 +1,6 @@
 {
   "name": "dsh-mindslice",
-  "version": "0.2.0-2",
+  "version": "0.2.3-1",
   "description": "Portable long-term memory for DeepSeek Harness: isolated Markdown slices, standing memory in every session, controlled evolution.",
   "author": "pancerZH",
   "license": "Apache-2.0",

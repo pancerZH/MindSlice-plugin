@@ -7,13 +7,13 @@ description: Maintain existing MindSlice memory, resolve overlay lineage and dup
 
 Use this skill for deliberate maintenance and consolidation in an existing workspace. Routine
 agent writes already receive guidance from the MCP server. For building one or more new slices from source
-files or a long document, use [slice-builder](https://github.com/pancerZH/MindSlice/blob/d31d6bca4beae3ebd5d251fed3ee5db5b775f6b4/skills/slice-builder/SKILL.md).
+files or a long document, use [slice-builder](https://github.com/pancerZH/MindSlice/blob/f916c40ad54acc715be2a6103cf36dde7d1d5633/skills/slice-builder/SKILL.md).
 
 Commands use the plugin's `mindslice` CLI, by the absolute path the standing memory pages give (it is not on the shell's `PATH`) and with escalated permissions, as those pages say; it targets the plugin's workspace unless you pass `-w <workspace>` or run it inside another MindSlice workspace. All operations have Python `Workspace` methods; MCP exposes only
 `manifest`, `search`, `read` and `write`, so management operations need CLI or Python access.
 
 When authoring or rewriting cards, read the shared
-[card format and retrieval vocabulary](https://github.com/pancerZH/MindSlice/blob/d31d6bca4beae3ebd5d251fed3ee5db5b775f6b4/skills/slice-builder/references/card-format.md).
+[card format and retrieval vocabulary](https://github.com/pancerZH/MindSlice/blob/f916c40ad54acc715be2a6103cf36dde7d1d5633/skills/slice-builder/references/card-format.md).
 Preserve source qualifications and unresolved disagreements when merging existing cards; a newer
 write alone does not prove that an older fact is false. Base slices stay read-only to runtime writes.
 
@@ -38,8 +38,11 @@ Pick the right operation:
 | Refines, adds an exception or if-then rule to, or depends on a card that stays valid | `create` with `--extends @project/api/auth-flow` |
 | An overlay card turns out to depend on another | `--op append --extends <baseline>` (adds the edge, text unchanged) |
 | A card is now wrong or outdated (changed value, correction) | `create` with `--supersedes @project/api/auth-flow` |
+| Change a few statements or a link on a card, leaving the rest as it is | `--op patch --edit "<old text>" "<new text>"` (each old text exactly once in the summary or body) |
 | Rewrite an overlay card you just read | `--op replace --if-match <sha256 from read>` |
+| Writes that belong together (a move, a split, a change with its repairs) | one `write` with `--also <file.json>`: all are saved or none |
 | A request to forget, or a card that should never have been written | `--op delete` |
+| The same, for a card in a base slice; or a forwarding stub nothing needs any more | `mindslice bake @slice --drop <path>` when baking is authorized (refused while a card extends it; previous slice directories still hold it) |
 | The response lists `affected_backlinks` / `affected_extensions` | Update or rebase each one now (below) |
 | A lasting preference about how the agent behaves (language, tone, persona) | `create` with `--load always` (staged for approval) |
 
