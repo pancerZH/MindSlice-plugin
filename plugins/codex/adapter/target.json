@@ -1,6 +1,6 @@
 {
   "target": "codex",
-  "plugin_version": "0.2.0-1",
+  "plugin_version": "0.2.0-2",
   "engine_version": "0.2.0",
   "page_limit": 9500,
   "hook_slots": 4,

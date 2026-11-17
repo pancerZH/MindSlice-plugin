@@ -457,10 +457,10 @@ def preamble(path: Path, snap: dict[str, Any] | None = None) -> str:
     return ("# MindSlice plugin: standing memory\n\n"
             f"Memory workspace: `{path}`\n"
             + mounts_line(snap or {})
-            + "These \"MindSlice standing memory\" pages deliver MindSlice's usage instructions and the user's "
-            "always-loaded cards in full. Read every page: they are numbered page i/n with one snapshot id, and the "
-            "last one ends with a \"complete\" line. You do not need manifest() for this content; call "
-            "manifest(include_always=false) only when you need fuller slice metadata.\n"
+            # What the pages deliver and when manifest is still needed is said once, by the instructions block below
+            # (it also reaches the model through manifest when the pages are missing).
+            + "Read every page: they are numbered page i/n with one snapshot id, and the last one ends with a "
+            "\"complete\" line.\n"
             + driver.cli_hint()
             + "".join("\n" + note for note in getattr(driver, "startup_notes", lambda: [])()))
 

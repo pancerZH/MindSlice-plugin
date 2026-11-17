@@ -1,6 +1,6 @@
 {
   "target": "codex",
-  "plugin_version": "0.2.0-1",
+  "plugin_version": "0.2.0-2",
   "upstream": {
     "repo": "https://github.com/pancerZH/MindSlice",
     "commit": "d31d6bca4beae3ebd5d251fed3ee5db5b775f6b4",
@@ -11,19 +11,19 @@
     }
   },
   "files": {
-    ".codex-plugin/plugin.json": "9a9afc42c56f9e3b6a8b0741298ed9c1c3814a392a2317f9d613fbd1e538923d",
+    ".codex-plugin/plugin.json": "b44c37f84ce092a1dd3c149b6fba4435e3d3f036c35fe8472c79db98ee4ba5d0",
     ".mcp.json": "366f565ce88ca4572d3133c0282f764c5361fccabcb7c356ab4244911848e8ff",
     "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
     "NOTICE": "c59a0c528eef8df48a71b5359c4c356ed5f1ef5283a01a7cc837e59464fd1fbf",
     "README.md": "41874c99292161a0241c9176782298130bb20ceed17c8c6e0b26eadd0240a9fb",
-    "adapter/core.py": "c782280be5c932cabd4321d1f9fdb5caeb29f5617d179230f809a11d65a3a6d1",
+    "adapter/core.py": "8624f7ddd38462d94a5f810e0f757c07c345bab7b7ff6ef6b88b1df6e925f61e",
     "adapter/driver.py": "6886e85267cd49da557e78ba41738bfd185269bb2a646844d18165d9d81d271a",
     "adapter/entry.py": "5cb621c27c6c34cb948e1c96623aa8d01d8992adb4bdc03f81752ede0ee376af",
     "adapter/hook.py": "bd64478a7ff5374d42ff0be493ee825559407b5fb564652c90c682a487724d2c",
     "adapter/mcp": "27e0aff3568c8cf03337b68e35929ea0e93e732fb4e462d176cef06f161b50e6",
     "adapter/mcp.cmd": "e230bfebe9ad090f757ba1a1496a01eed3c273d815dc4575442bb6b8f7a40644",
     "adapter/provision.py": "d011e413109504487b6fed08de3d1cfba3b1f00457bbb4e01a9598850d970d1e",
-    "adapter/target.json": "46ea1b89c452eec5b7c5268b79f256e7d2576964adf18b7821d8d02dc45bd506",
+    "adapter/target.json": "e94b8d5883ce25d09db54ea11f686fc5f71a2d08ca17b56842a57e9333ba2743",
     "assets/logo.png": "c22682a788f779c6a841beca5856a84d36ec2deb4a5da04ba117fe24ed50c083",
     "bin/mindslice": "e15aaf90692256c62bc72443941a959cb5d85e53df5c9b8810bdcb832cb221ab",
     "bin/mindslice.cmd": "54f9e2db4593bfd32b1704f9117d34dd685f68aa1d9c92feb85033451c1d8ef8",

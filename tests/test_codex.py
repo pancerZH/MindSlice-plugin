@@ -164,7 +164,7 @@ class HookTest(PluginTestCase):
             write_always(ws, f"big/b{i}", "- " + ("长规则 " * 2200))
         r = self.hook(session="ovf")
         self.assertEqual(len(r.pages), cfg["hook_slots"])
-        self.assertIn("MindSlice's usage instructions", r.pages[0])  # the preamble is still there
+        self.assertIn("# MindSlice plugin: standing memory", r.pages[0])  # the preamble is still there
         self.assertIn("# Standing memory overflow", r.pages[-1])
         self.assertLessEqual(core.utf16_len(r.context), hook_handler()["additionalContextLimit"])
 

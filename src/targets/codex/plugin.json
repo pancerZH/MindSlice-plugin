@@ -1,6 +1,6 @@
 {
   "name": "mindslice",
-  "version": "0.2.0-1",
+  "version": "0.2.0-2",
   "description": "Portable long-term memory: isolated Markdown slices, standing memory in every session, controlled evolution.",
   "author": {
     "name": "pancerZH"
