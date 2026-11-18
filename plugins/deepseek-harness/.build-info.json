@@ -1,19 +1,19 @@
 {
   "target": "deepseek-harness",
-  "plugin_version": "0.2.3-1",
+  "plugin_version": "0.2.4-1",
   "upstream": {
     "repo": "https://github.com/pancerZH/MindSlice",
-    "commit": "f916c40ad54acc715be2a6103cf36dde7d1d5633",
-    "version": "0.2.3",
+    "commit": "a3fc9a863db3c65432d2cdace2103211e595f74d",
+    "version": "0.2.4",
     "wheel": {
-      "url": "https://files.pythonhosted.org/packages/12/0c/c8a7178f2d40e5a6e2da2838fd45e042f0b5383e524016a5174e9f3ded0d/mindslice-0.2.3-py3-none-any.whl",
-      "sha256": "8f8d62b187f7971008552b39f100933a9360df21cab636b452371fdaf9b2405f"
+      "url": "https://files.pythonhosted.org/packages/1b/02/e240cc62087c92b6490c3f41c1934647db3658bfdc5a0f862c8bf9a0ab5a/mindslice-0.2.4-py3-none-any.whl",
+      "sha256": "277813a39b06c97fbb3f2f97a965e11640507806ed4267c6198bcac312eac6b9"
     }
   },
   "files": {
     "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
     "NOTICE": "c59a0c528eef8df48a71b5359c4c356ed5f1ef5283a01a7cc837e59464fd1fbf",
-    "README.md": "fe031c319f945f5c2623284d453362f347a07555db8eb112ddd9394317266d2d",
+    "README.md": "346332821faeb534f8205fcce21a3686f8be28d9d6b8b2eae6c0a8f614352f18",
     "adapter/core.py": "8624f7ddd38462d94a5f810e0f757c07c345bab7b7ff6ef6b88b1df6e925f61e",
     "adapter/driver.py": "2fb5cdef1c82af9ee0e1852a3fde39ac4cd7830625c6cf026ec3567abe2b4d0d",
     "adapter/entry.py": "5cb621c27c6c34cb948e1c96623aa8d01d8992adb4bdc03f81752ede0ee376af",
@@ -22,15 +22,15 @@
     "adapter/mcp.cmd": "e230bfebe9ad090f757ba1a1496a01eed3c273d815dc4575442bb6b8f7a40644",
     "adapter/plugin.js": "d2931008d72220dc15bf31ddcd603db1a4b171b0cb83f1d8f1f16d25ab7c96d6",
     "adapter/provision.py": "d011e413109504487b6fed08de3d1cfba3b1f00457bbb4e01a9598850d970d1e",
-    "adapter/target.json": "d886afb6983a5ef3c7d867dd7860d91b747bb0058c463f68c6ea83e0b7eff4b3",
+    "adapter/target.json": "bccafc46df06bff0b02fa418f8b8ef7ce534abaf03e9b3a41af7ef637f6d24f4",
     "assets/logo.png": "c22682a788f779c6a841beca5856a84d36ec2deb4a5da04ba117fe24ed50c083",
     "bin/mindslice": "e15aaf90692256c62bc72443941a959cb5d85e53df5c9b8810bdcb832cb221ab",
     "bin/mindslice.cmd": "54f9e2db4593bfd32b1704f9117d34dd685f68aa1d9c92feb85033451c1d8ef8",
     "cordis.patch.yml": "3a18fc7d29acfdad4a6b4098319696f591241f1c4a3242d151b41bed7960db33",
-    "package.json": "b905dc4e75c7c83a4a35cc690fa6438d24d8b81a1df6588c249606e7a4c29b75",
+    "package.json": "7b6826b81d211bb129018c1171f9f515021351cd5f5f38901041b70d0e93b42d",
     "skills/mindslice-review/SKILL.md": "cc12137fd4cdc847c6710861a188eaa1aa9663394eec70afa71600404c4dc6c1",
-    "skills/mindslice-setup/SKILL.md": "c4fad4728d2f0d36edc1e80f33beb65cc6f10fcdee0535db1d59ef95a22a500c",
+    "skills/mindslice-setup/SKILL.md": "dd25b6b85c6e4f546e926d265b5266fa4b684cfde95c86718b0b23320e294502",
     "skills/mindslice-setup/uninstall.md": "5c07c30370ea5e67c0a4666dc19b8bba59227bb591a34599db195afc99fa7733",
-    "skills/mindslice-slice-maintainer/SKILL.md": "7e148186649454a723607a6b53601623e5ebcafec3b9786381a2c24b47ea29cc"
+    "skills/mindslice-slice-maintainer/SKILL.md": "545723fcc24a2c1f6da69642452207719e2dca4cc8b4c7a9d8e0ab93ee6fab43"
   }
 }
