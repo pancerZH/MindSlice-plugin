@@ -1,9 +1,9 @@
 {
   "repo": "https://github.com/pancerZH/MindSlice",
-  "commit": "a3fc9a863db3c65432d2cdace2103211e595f74d",
-  "version": "0.2.4",
+  "commit": "f220705059d8721d4042c452b88daa20822318b0",
+  "version": "0.2.5",
   "wheel": {
-    "url": "https://files.pythonhosted.org/packages/1b/02/e240cc62087c92b6490c3f41c1934647db3658bfdc5a0f862c8bf9a0ab5a/mindslice-0.2.4-py3-none-any.whl",
-    "sha256": "277813a39b06c97fbb3f2f97a965e11640507806ed4267c6198bcac312eac6b9"
+    "url": "https://files.pythonhosted.org/packages/67/a3/bbaa164aa4c659b43bb785689e5135ea1b078a8068a94c7211f6567d71de/mindslice-0.2.5-py3-none-any.whl",
+    "sha256": "72ab848b31fdb2c9f6e5c5d84e27754d1f9b4aa139e0aece86a89a1bfcce6741"
   }
 }

@@ -1,12 +1,12 @@
 {
   "target": "claude",
-  "plugin_version": "0.2.4-1",
-  "engine_version": "0.2.4",
+  "plugin_version": "0.2.5-1",
+  "engine_version": "0.2.5",
   "page_limit": 9500,
   "hook_slots": 4,
   "engine": {
-    "version": "0.2.4",
-    "url": "https://files.pythonhosted.org/packages/1b/02/e240cc62087c92b6490c3f41c1934647db3658bfdc5a0f862c8bf9a0ab5a/mindslice-0.2.4-py3-none-any.whl",
-    "sha256": "277813a39b06c97fbb3f2f97a965e11640507806ed4267c6198bcac312eac6b9"
+    "version": "0.2.5",
+    "url": "https://files.pythonhosted.org/packages/67/a3/bbaa164aa4c659b43bb785689e5135ea1b078a8068a94c7211f6567d71de/mindslice-0.2.5-py3-none-any.whl",
+    "sha256": "72ab848b31fdb2c9f6e5c5d84e27754d1f9b4aa139e0aece86a89a1bfcce6741"
   }
 }

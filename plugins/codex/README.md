@@ -40,10 +40,10 @@ Requirements: Python 3.12 or newer somewhere on the machine (`python3.12`/`pytho
 Linux; macOS should behave the same, and is not verified yet. Windows is not verified.
 
 The plugin does not bundle the MindSlice engine. In the first session it downloads the pinned release from PyPI
-(`mindslice==0.2.4`, a 150 KB pure-Python wheel with no dependencies), checks its sha256 and unpacks it into
+(`mindslice==0.2.5`, a 150 KB pure-Python wheel with no dependencies), checks its sha256 and unpacks it into
 the plugin's data folder, where it stays across plugin updates. That first session needs internet access
 (`HTTPS_PROXY` is honoured). Offline, install it yourself first: `python3.12 -m pip install --user
-mindslice==0.2.4`, or download the wheel and set `MINDSLICE_PLUGIN_WHEEL` to the file.
+mindslice==0.2.5`, or download the wheel and set `MINDSLICE_PLUGIN_WHEEL` to the file.
 
 ## What the plugin provides
 

@@ -7,13 +7,13 @@ description: Maintain existing MindSlice memory, resolve overlay lineage and dup
 
 Use this skill for deliberate maintenance and consolidation in an existing workspace. Routine
 agent writes already receive guidance from the MCP server. For building one or more new slices from source
-files or a long document, use [slice-builder](https://github.com/pancerZH/MindSlice/blob/a3fc9a863db3c65432d2cdace2103211e595f74d/skills/slice-builder/SKILL.md).
+files or a long document, use [slice-builder](https://github.com/pancerZH/MindSlice/blob/f220705059d8721d4042c452b88daa20822318b0/skills/slice-builder/SKILL.md).
 
 Commands use the `mindslice` CLI that the plugin puts on the PATH of the terminal tool (`run_command`); it targets the plugin's workspace unless you pass `-w <workspace>` or run it inside another MindSlice workspace. All operations have Python `Workspace` methods; MCP exposes only
 `manifest`, `search`, `read` and `write`, so management operations need CLI or Python access.
 
 When authoring or rewriting cards, read the shared
-[card format and retrieval vocabulary](https://github.com/pancerZH/MindSlice/blob/a3fc9a863db3c65432d2cdace2103211e595f74d/skills/slice-builder/references/card-format.md).
+[card format and retrieval vocabulary](https://github.com/pancerZH/MindSlice/blob/f220705059d8721d4042c452b88daa20822318b0/skills/slice-builder/references/card-format.md).
 Preserve source qualifications and unresolved disagreements when merging existing cards; a newer
 write alone does not prove that an older fact is false. Base slices stay read-only to runtime writes.
 
