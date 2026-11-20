@@ -29,10 +29,10 @@ python.org (the plugin starts it with the `py` launcher). Without Git Bash, Clau
 PowerShell, which this plugin does not support yet.
 
 The plugin does not bundle the MindSlice engine. In the first session it downloads the pinned release from
-PyPI (`mindslice==0.2.5`, a 150 KB pure-Python wheel with no dependencies), checks its sha256 and unpacks it
+PyPI (`mindslice==0.2.6`, a 150 KB pure-Python wheel with no dependencies), checks its sha256 and unpacks it
 into the plugin's data directory, where it stays across plugin updates. That first session needs internet
 access (`HTTPS_PROXY` is honoured). Offline, install it yourself first:
-`python3.12 -m pip install --user mindslice==0.2.5`, or download the wheel and set `MINDSLICE_PLUGIN_WHEEL`
+`python3.12 -m pip install --user mindslice==0.2.6`, or download the wheel and set `MINDSLICE_PLUGIN_WHEEL`
 to the file.
 
 ## What the plugin provides
