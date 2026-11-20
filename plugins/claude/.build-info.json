@@ -1,21 +1,21 @@
 {
   "target": "claude",
-  "plugin_version": "0.2.7-1",
+  "plugin_version": "0.2.8-1",
   "upstream": {
     "repo": "https://github.com/pancerZH/MindSlice",
-    "commit": "befcd55a329909a3fda8db8f57377d846d152c04",
-    "version": "0.2.7",
+    "commit": "7dc93fce6e23a0b03e5057949276b431025e6539",
+    "version": "0.2.8",
     "wheel": {
-      "url": "https://files.pythonhosted.org/packages/16/9c/1ce29251b05b52a61bd3a2e23d5979cec04d600e9f72e499fa51c096c3c5/mindslice-0.2.7-py3-none-any.whl",
-      "sha256": "5bc740668350afdf8f704c2c68a8ce82a26cc39c87ebf2f4cfc15fbb05a5f8c3"
+      "url": "https://files.pythonhosted.org/packages/ec/68/de94518d9934dedb4777d9e6761ac5b06414f0c32670f4517bd70e5f9a7c/mindslice-0.2.8-py3-none-any.whl",
+      "sha256": "dfae502c896a71833d9c4e79fdf55c3b343fad431d579f46fd384336f23fc02c"
     }
   },
   "files": {
     ".claude-plugin/icon.png": "c22682a788f779c6a841beca5856a84d36ec2deb4a5da04ba117fe24ed50c083",
-    ".claude-plugin/plugin.json": "18db848bde22649b45d2a8e699beef20b9e83f5ec1ab85b2aa31d19c0cb8e709",
+    ".claude-plugin/plugin.json": "f3b303dee3a384eaf12662f405fce83c7124950732d7d932a0a9efe92a1d9079",
     "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
     "NOTICE": "c59a0c528eef8df48a71b5359c4c356ed5f1ef5283a01a7cc837e59464fd1fbf",
-    "README.md": "b2429147b40ea5f2bacd458016b2720ad35ba71a48c5505261b413969aaaabdc",
+    "README.md": "606033ef8a7184d9713d15de82b9341e1a3b3b43ee835edc26c61cc2d5468d6b",
     "adapter/core.py": "8624f7ddd38462d94a5f810e0f757c07c345bab7b7ff6ef6b88b1df6e925f61e",
     "adapter/driver.py": "663520e1a09d97e3b6c74c16afb34d8941c2bfdf6dab636bd153bdcfa464d31a",
     "adapter/entry.py": "5cb621c27c6c34cb948e1c96623aa8d01d8992adb4bdc03f81752ede0ee376af",
@@ -26,11 +26,11 @@
     "adapter/mcp": "3890f7faa3061a2c64e26c58fa77229ef8a277508efcdbdc7eb30bc5afba2db7",
     "adapter/mcp.cmd": "9e52763d8b4c9933648927c929c9e2a03bcbe19757d361d356f9a3d2c6a3e619",
     "adapter/provision.py": "d011e413109504487b6fed08de3d1cfba3b1f00457bbb4e01a9598850d970d1e",
-    "adapter/target.json": "a9616fa81494faac3fea14b4cf4d64e84aea7ea624e0838ebc20cd00fafeab98",
+    "adapter/target.json": "754cc3de04999541c5b323c6b5ab34fdd867fc02c2f97d013b553c5beca9ac61",
     "hooks/hooks.json": "c344eacdc31ada852b70d35bdc3c739a0fb43605fbd156cf41bf36188951645f",
     "skills/review/SKILL.md": "2d4d7fc5f14a4800806ae681049c3ecc8601b11b96bdb627ac40550d327d8a71",
-    "skills/setup/SKILL.md": "ba1cc5f35de72900836cde5868dae7ff91eaef8166b7e81ef78bcd9d7b4c6cb8",
+    "skills/setup/SKILL.md": "cb5cc83def405052ea498344248ff9949bbce0fcbdb9e31b78e5b6f7e4f5bb85",
     "skills/setup/uninstall.md": "bb431a4bc60a27ecf34f97fe02965c0c29ebbc5b0693f2ca00952c151572b52e",
-    "skills/slice-maintainer/SKILL.md": "817ac2fa569614eef525e627bdf5ed37f83c6a940ca606e86ba5d1364e7b9811"
+    "skills/slice-maintainer/SKILL.md": "67bdd74509f933a18ea0328df0dd61ee46f6a234e4acc5804cc5d28228f7226e"
   }
 }
