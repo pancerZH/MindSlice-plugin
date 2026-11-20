@@ -155,6 +155,24 @@ class HookTest(PluginTestCase):
         self.assertIn(str(ws), r.stdout)
         self.assertIn("standing memory complete", r.stdout)
 
+    def test_hook_uses_current_install_settings_before_mcp_starts(self) -> None:
+        old, new = self.tmp / "old", self.tmp / "new"
+        for ws, phrase in ((old, "PREVIOUS-CONTEXT"), (new, "CURRENT-CONTEXT")):
+            Workspace.init(ws).close()
+            write_always(ws, "prefs/p", phrase)
+        core.write_bridge(old)
+        home = self.tmp / "home"
+        config = home / ".gemini" / "config"
+        installed = config / "plugins" / "mindslice"
+        installed.mkdir(parents=True)
+        env = {"HOME": str(home), "USERPROFILE": str(home), "PLUGIN_ROOT": str(installed)}
+        for workspace in (str(new), ""):
+            settings = {"enabled": True, "mcp": {"mindslice_mindslice": {"variables": {"workspace": workspace}}}}
+            (config / "config.json").write_text(json.dumps({"plugins": {"mindslice": settings}}))
+            page = self.hook(session="settings", env=env).stdout
+            self.assertNotIn("PREVIOUS-CONTEXT", page)
+            self.assertEqual("CURRENT-CONTEXT" in page, bool(workspace))
+
     def test_unconfigured_after_the_wait(self) -> None:
         start = time.monotonic()
         r = self.hook(1, session="none")

@@ -9,7 +9,8 @@ Measured on Antigravity CLI 1.5.9 (PLAN section 12):
   takes more than 3 bytes per unit) and the driver checks its byte length again before printing it.
 - Hooks get ``PLUGIN_ROOT`` and ``PLUGIN_DATA``, but not the user's settings: the MCP server's ``variables``
   (the workspace) reach only the MCP server, which writes the bridge file the hook reads (``options_reach_hooks``
-  is False). Both start together, so the hook waits a few seconds for a bridge file that does not exist yet.
+  is False). Installed hooks read the current setting from the host's config. Workspace plugins wait briefly for
+  the MCP server to refresh the bridge.
 - Compaction replaces the pages with a summary and fires no hook (``reinjects_on_compact`` is False): the engine
   text keeps "call manifest() again after compaction", and ``rules/AGENTS.md`` repeats it.
 - The agent's ``run_command`` has the plugin's ``bin/`` on its PATH, but neither ``PLUGIN_ROOT`` nor
@@ -190,9 +191,15 @@ def _record_setting(value: str) -> str:
         except OSError:
             pass
         raise core.PluginError(err)
-    if core.read_bridge() != str(path):
+    if core.classify(path) == core.OCCUPIED:
+        error = core.occupied_message(path)
+        try:
+            core.atomic_write(core.bridge_path(), json.dumps({"workspace": str(path), "error": error}) + "\n")
+        except OSError:
+            pass
+    else:
         core.write_bridge(path)
-    return value
+    return value  # ensure_workspace rechecks under its lock before deciding whether to initialise
 
 
 def stage_writes_enabled() -> bool:
@@ -241,21 +248,56 @@ def launcher_dir() -> Path:
     return PLUGIN_ROOT / "bin"
 
 
-def _await_bridge() -> None:
-    """The MCP server writes the bridge file once it has read the workspace setting; at the very first session it may
-    still be starting (or installing the engine) when the hook runs."""
+def _hook_workspace() -> str:
+    """Pin this hook to the current host setting, or a bridge refreshed while this hook waits."""
     import core
 
-    if core.resolve("hook").state != core.UNSET:
-        return
-    # An error the MCP server recorded at an earlier start may be stale: the user may have fixed the setting since,
-    # and this conversation's server is about to replace it. Only an error written just now (by the server starting
-    # alongside this hook) ends the wait early.
-    fresh_after = time.time() - FRESH_ERROR
+    home = home_dir()
+    installed = Path(os.environ.get("PLUGIN_ROOT") or PLUGIN_ROOT)
+    if home and installed.parent == home / ".gemini" / "config" / "plugins":
+        name = installed.name
+        try:
+            config = json.loads((installed.parent.parent / "config.json").read_text(encoding="utf-8"))
+            plugin = config["plugins"][name]
+            raw = plugin["mcp"][name + "_mindslice"]["variables"]["workspace"] if plugin.get("enabled") else ""
+            value = _clean(raw) if isinstance(raw, str) else None
+        except (OSError, ValueError, TypeError, AttributeError, KeyError):
+            value = None
+        if not value:
+            raise core.PluginError(core.unset_message())
+    else:
+        value = _clean(os.environ.get("MINDSLICE_PLUGIN_OPTION_WORKSPACE"))
+        if not value:
+            value = _await_bridge()
+    path, why = core.check_workspace_setting(value)
+    if why or path is None:
+        raise core.PluginError(_invalid_workspace_message(value, why or "is invalid"))
+    return str(path)
+
+
+def _await_bridge() -> str:
+    import core
+
+    started = time.time_ns()
     deadline = time.monotonic() + BRIDGE_WAIT
-    while core.read_bridge() is None and not _fresh_bridge_error(fresh_after):
+    while True:
+        try:
+            # Read the timestamp and the value from the same inode across atomic replacements.
+            with core.bridge_path().open(encoding="utf-8") as bridge:
+                fresh = os.fstat(bridge.fileno()).st_mtime_ns >= started
+                data = json.load(bridge)
+            if fresh and isinstance(data, dict) and isinstance(data.get("workspace"), str):
+                return data["workspace"]
+        except (OSError, ValueError):
+            pass
+        if _fresh_bridge_error(started / 1e9 - FRESH_ERROR):
+            raise core.PluginError(_bridge_error() or core.unset_message())
         if time.monotonic() >= deadline:
-            return
+            if err := _bridge_error():
+                raise core.PluginError(err)
+            if value := _clean(os.environ.get("MINDSLICE_WORKSPACE")):
+                return value
+            raise core.PluginError(core.unset_message())
         time.sleep(0.1)
 
 
@@ -293,16 +335,12 @@ def run_hook(args: list[str]) -> int:
     info = core.hook_input()
     session = str(info.get("conversationId") or _clean(os.environ.get("ANTIGRAVITY_CONVERSATION_ID"))
                   or f"ppid-{os.getppid()}")
-    _await_bridge()
-    err = _bridge_error()
-    state = core.resolve("hook").state
-    if err is not None and state == core.UNSET:
-        pages = [f"[MindSlice plugin: memory not loaded] {err}" + COLD_START_HINT]
-    else:
-        result = core.hook_pages(session, int(cfg["page_limit"]), int(cfg["hook_slots"]))
+    try:
+        workspace = _hook_workspace()
+        result = core.hook_pages(session, int(cfg["page_limit"]), int(cfg["hook_slots"]), cli_workspace=workspace)
         pages = list(result.pages)
-        if state == core.UNSET and pages:
-            pages[0] = pages[0] + COLD_START_HINT
+    except core.PluginError as exc:
+        pages = [f"[MindSlice plugin: memory not loaded] {exc}" + COLD_START_HINT]
     sys.stdout.buffer.write((json.dumps(inject(pages), ensure_ascii=False) + "\n").encode("utf-8"))
     sys.stdout.flush()
     return 0
